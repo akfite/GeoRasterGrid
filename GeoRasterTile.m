@@ -94,7 +94,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             %
             %   Usage:
             %
-            %       value = obj.get(lat, lon)
+            %       values = obj.get(lat, lon)
             %
             %   Inputs:
             %
@@ -105,7 +105,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             %
             %   Outputs:
             %
-            %       value <double array>
+            %       values <double array>
             %           - the raster value(s)
             %           - will always have type double (regardless of the native
             %             type of the raster)
@@ -123,6 +123,43 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                 'Both latitude & longitude must be matrices (2d arrays)');
 
             values = this.interpolant(lat, lon);
+        end
+
+        function [values, lat, lon] = roi(this, lat_bounds, lon_bounds)
+            %GEORASTERTILE/ROI Get values in a region of interest (ROI).
+            %
+            %   Usage:
+            %
+            %       [values, lat, lon] = obj.roi(lat_bounds, lon_bounds)
+            %
+            %   Inputs:
+            %
+            %       lat_bounds, lon_bounds <1x2 double>
+            %           - the min & max values of the region's rectangle
+            %           - degrees on [-180, 180]
+            %
+            %   Outputs:
+            %
+            %       values <NxMxC double>
+            %           - the grid of raster values
+            %           - sampled at the native resolution of the raster
+            %             (at the exact post spacing the raster is defined on)
+            %
+            %       lat, lon <1xN and 1xM double>
+            %           - the geodetic coordinates that the returned values
+            %             are sampled on
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterTile">GeoRasterTile</a>
+
+            lat = this.lat;
+            lon = this.lon;
+
+            ilat = find(lat >= lat_bounds(1) & lat <= lat_bounds(2));
+            ilon = find(lon >= lon_bounds(1) & lon <= lon_bounds(2));
+
+            lat = lat(ilat);
+            lon = lon(ilon);
+            values = this.raster(ilat, ilon, :);
         end
 
         function [bx, by] = bounding_box(this)
