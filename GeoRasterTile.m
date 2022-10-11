@@ -89,7 +89,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
 
     %% Public
     methods
-        function values = get(this, lat, lon, is_grid)
+        function values = get(this, lat, lon)
             %GEORASTERTILE/GET Access the value at lat/lon pairs.
             %
             %   Usage:
@@ -98,11 +98,29 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             %
             %   Inputs:
             %
-            %       lat, lon <double arrays>
-            %           - 
+            %       lat, lon <double matrix>
+            %           - the query points
+            %           - degrees on the interval [-180, 180]
+            %           - must be the same size
+            %
+            %   Outputs:
+            %
+            %       value <double array>
+            %           - the raster value(s)
+            %           - will always have type double (regardless of the native
+            %             type of the raster)
+            %           - first two dimensions will match the size of lat & lon,
+            %             and the third dimension corresponds to the color channels
+            %             of the raster (e.g. red, green, blue)
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterTile">GeoRasterTile</a>
+
             assert(all(size(lat) == size(lon)), ...
                 'GeoRasterTile:size_mismatch', ...
                 'Latitude & longitude must have the same size.');
+            assert(ismatrix(lat) && ismatrix(lon), ...
+                'GeoRasterTile:not_matrix', ...
+                'Both latitude & longitude must be matrices (2d arrays)');
 
             values = this.interpolant(lat, lon);
         end
