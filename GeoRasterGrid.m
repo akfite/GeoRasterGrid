@@ -1,26 +1,27 @@
-classdef GeoRasterMap < matlab.mixin.Copyable
-%GEORASTERMAP Manage tiled geospatial information.
+classdef GeoRasterGrid < matlab.mixin.Copyable
+%GEORASTERGRID Manage gridded geospatial information.
 %
-%   obj = GEORASTERMAP(___) manages a tiled dataset of geospatial information
+%   obj = GEORASTERGRID(___) manages a tiled dataset of geospatial information
 %   from one or more georaster files.
 %
 %   Methods:
 %
 %       Constructor:
-%       <a href="matlab:help GeoRasterMap.GeoRasterMap">GeoRasterMap</a>
+%       <a href="matlab:help GeoRasterGrid.GeoRasterGrid">GeoRasterGrid</a>
 %
 %       Public methods:
-%       <a href="matlab:help GeoRasterMap.get">get</a> (values at specific lat/lon)
-%       <a href="matlab:help GeoRasterMap.roi">roi</a> (values in a region of interest)
-%       <a href="matlab:help GeoRasterMap.clear">clear</a> (drop all tiles in memory)
-%       <a href="matlab:help GeoRasterMap.plot">plot</a>
+%       <a href="matlab:help GeoRasterGrid.get">get</a> (values at specific lat/lon)
+%       <a href="matlab:help GeoRasterGrid.roi">roi</a> (values in a region of interest)
+%       <a href="matlab:help GeoRasterGrid.clear">clear</a> (drop all tiles in memory)
+%       <a href="matlab:help GeoRasterGrid.plot">plot</a>
 
 %   Author:     Austin Fite
 %   Contact:    akfite@gmail.com
 %   Date:       10-2022
 
     properties
-        capacity(1,1) uint16 = 16 % max number of tiles to store
+        capacity(1,1) uint16 = 36 % max number of tiles to store
+        make_tile(1,1) function_handle = @GeoRasterTile
     end
 
     properties (SetAccess = private)
@@ -43,13 +44,13 @@ classdef GeoRasterMap < matlab.mixin.Copyable
 
     %% Constructor
     methods
-        function this = GeoRasterMap(files, capacity)
-            %GEORASTERMAP Constructor.
+        function this = GeoRasterGrid(files, tile_builder)
+            %GEORASTERGRID Constructor.
             %
             %   Usage:
             %
-            %       obj = GEORASTERMAP(files)
-            %       obj = GEORASTERMAP(files, capacity)
+            %       obj = GEORASTERGRID(files)
+            %       obj = GEORASTERGRID(files, tile_builder)
             %
             %   Inputs:
             %
@@ -62,8 +63,8 @@ classdef GeoRasterMap < matlab.mixin.Copyable
             %                   .adf
             %                   .asc, .grd
             %                   .flt
-            %                   .dt0, .dt1, dt2
-            %                   .DDF
+            %                   .dt0, .dt1, .dt2
+            %                   .ddf
             %                   .dem
             %                   .ers
             %                   .dat
@@ -78,17 +79,20 @@ classdef GeoRasterMap < matlab.mixin.Copyable
             %             found, the most frequently-occuring filetype will be kept
             %             and the others discarded
             %
-            %       capacity (=16) <1x1 unsigned integer>
-            %           - the maximum number of raster tiles that may be in memory
-            %             at any one time
-            %           - this value can also be set via the public class property
-            %             at any time after construction
+            %       tile_builder (=@GeoRasterTile) <1x1 function_handle>
+            %           - function handle to create a GeoRasterTile given the
+            %             filepath to a raster
+            %           - by default it will support files readable by readgeoraster,
+            %             but if the data is in some custom format (e.g. JPEG2000 with
+            %             geospatial info encoded in the filepath) the function can be
+            %             replaced with a wrapper that calls GeoRasterTile with 2+ inputs
+            %             after parsing info from the filepath (or wherever it is stored)
             %
-            %   For more methods, see <a href="matlab:help GeoRasterMap">GeoRasterMap</a>
-
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
             if nargin < 2
-                capacity = 16;
+                tile_builder = @GeoRasterTile;
             end
+
             if nargin < 1
                 files = "D:\data\blue-marble\dem";
             end
@@ -101,10 +105,8 @@ classdef GeoRasterMap < matlab.mixin.Copyable
                 files = string(files);
             end
 
-            raster_files = string.empty;
-
-            % remove filepaths from directories provided
-            raster_files = vertcat(raster_files, files(isfile(files)));
+            raster_files = files(isfile(files)); % take filepaths as-is
+            files(isfile(files)) = []; % do not search under filepaths
 
             % search remaining folders for raster files
             for i = 1:numel(files)
@@ -119,7 +121,7 @@ classdef GeoRasterMap < matlab.mixin.Copyable
                 end
             end
 
-            assert(~isempty(raster_files),'GeoRasterMap:none_found',...
+            assert(~isempty(raster_files),'GeoRasterGrid:none_found',...
                 'Failed to find any georaster files.');
 
             % import metadata (first pass: try to find a .json file that encodes metadata
@@ -134,14 +136,22 @@ classdef GeoRasterMap < matlab.mixin.Copyable
             end
 
             if json_exists % load metadata without mapping toolbox
-                error('@TODO: not yet implemented')
+                error('Future growth (not yet implemented)')
             else % import metadata using mapping toolbox
                 [ok, errmsg] = license('checkout','map_toolbox');
-                assert(ok, 'GeoRasterMap:license_failure', errmsg);
+                assert(ok, 'GeoRasterGrid:license_failure', errmsg);
 
                 for i = numel(raster_files):-1:1
                     info = georasterinfo(raster_files{i});
                     R = info.RasterReference;
+
+                    % raster coordinates must be parallel to meridians & parallels
+                    validateattributes(R,...
+                        {...
+                            'map.rasterref.GeographicCellsReference', ...
+                            'map.rasterref.GeographicPostingsReference' ...
+                        }, ...
+                        {'scalar'});
 
                     % assign to class props
                     this.raster_files(i) = raster_files(i);
@@ -164,29 +174,29 @@ classdef GeoRasterMap < matlab.mixin.Copyable
     %% Public interface
     methods
         function value = get(this, varargin)
-            %GEORASTERMAP/get Check the type of a point on the Earth.
+            %GEORASTERGRID/get Interpolate the value at specific lat/lon point(s).
             %
-            %   Usage (assuming map is a 1x1 GeoRasterMap):
+            %   Usage (assuming map is a 1x1 GeoRasterGrid):
             %
-            %       value = map.get(lla <Nx2 or Nx3>)
             %       value = map.get(lat, lon)
+            %       value = map.get(lla <Nx2 or Nx3>)
             %
             %   Inputs:
             %
             %       lat <vector of latitudes>
-            %           - Geodetic latitude (degrees)
-            %           - Positive North from equator
+            %           - geodetic latitude (degrees)
+            %           - positive North from equator
             %
             %       lon <vector of longitudes>
-            %           - Geodetic longitude (degrees)
-            %           - Positive East from Greenwich meridian
+            %           - geodetic longitude (degrees)
+            %           - positive East from Greenwich meridian
             %
             %   Outputs:
             %
             %       value <Nx1 BackgroundType>
             %           - the classification of each input point
             %
-            %   For more methods, see <a href="matlab:help GeoRasterMap">GeoRasterMap</a>
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
             if nargin == 2
                 lat = rad2deg(varargin{1}(:,1));
@@ -237,7 +247,7 @@ classdef GeoRasterMap < matlab.mixin.Copyable
         end
         
         function ax = show(this)
-            %GEORASTERMAP/SHOW Display the current state of the map.
+            %GEORASTERGRID/SHOW Display the current state of the map.
             %
             %   Usage:
             %
@@ -248,15 +258,15 @@ classdef GeoRasterMap < matlab.mixin.Copyable
             %       Displays the tiles that the object currently has cached on
             %       a world map.
             %
-            %   For more methods, see <a href="matlab:help GeoRasterMap">GeoRasterMap</a>
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
             hfig = figure;
             colordef(hfig,'black'); %#ok<*COLORDEF>
             ax = axes('nextplot','add');
             colormap(ax,'gray');
 
-            dx = GeoRasterMap.dx; %#ok<*PROP>
-            dy = GeoRasterMap.dy;
+            dx = GeoRasterGrid.dx; %#ok<*PROP>
+            dy = GeoRasterGrid.dy;
 
             % overlay on map of the Earth
             earth_texture = imread('landOcean.jpg');
@@ -332,8 +342,8 @@ classdef GeoRasterMap < matlab.mixin.Copyable
         end
 
         function [row,col] = latlon2rowcol(this, lat, lon, index)
-            dx = GeoRasterMap.dx;
-            dy = GeoRasterMap.dy;
+            dx = GeoRasterGrid.dx;
+            dy = GeoRasterGrid.dy;
 
             % x0 and y0 are the pixel edge, so dx/dy will step us across whole
             % pixels (as opposed to starting at pixel center, which would step
