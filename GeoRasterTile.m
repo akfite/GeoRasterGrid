@@ -175,8 +175,22 @@ classdef GeoRasterTile < matlab.mixin.Copyable
         end
     end
 
-    %% Property Accessors
+    %% Property Setters/Getters
     methods
+        function set.interp(this, value)
+            %GEORASTERTILE/SET.INTERP Update the interpolation type.
+            %
+            %   This method re-creates the interpolant (rather than updating the
+            %   existing interpolant's Method) because as of R2020b there is a
+            %   bug with MATLAB's code that causes performance to massively degrade--
+            %   on the order of 300x slowdown.
+
+            validatestring(value, {'linear','nearest','spline','cubic','makima'});
+            [latgrid, longrid] = ndgrid(this.lat, this.lon); %#ok<*MCSUP>
+            this.interpolant = griddedInterpolant(latgrid, longrid, this.raster, value);
+            this.interp = value;
+        end
+
         function v = get.raster(this)
             v = this.interpolant.Values;
         end
