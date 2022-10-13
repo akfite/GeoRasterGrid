@@ -80,6 +80,9 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             longrid = linspace(min(lon_extents)+dx/2, max(lon_extents)-dx/2, size(img,2));
             latgrid = linspace(min(lat_extents)+dy/2, max(lat_extents)-dy/2, size(img,1));
 
+            % TODO: assume standard image coords, but use info from R if possible
+            latgrid = fliplr(latgrid);
+
             [latgrid, longrid] = ndgrid(latgrid, longrid);
 
             this.interpolant = griddedInterpolant(latgrid, longrid, double(img), this.interp);
@@ -125,18 +128,25 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             values = this.interpolant(lat, lon);
         end
 
-        function [values, lat, lon] = roi(this, lat_bounds, lon_bounds)
+        function [values, lat, lon] = roi(this, lat_bounds, lon_bounds, res)
             %GEORASTERTILE/ROI Get values in a region of interest (ROI).
             %
             %   Usage:
             %
             %       [values, lat, lon] = obj.roi(lat_bounds, lon_bounds)
+            %       [values, lat, lon] = obj.roi(lat_bounds, lon_bounds, res)
             %
             %   Inputs:
             %
             %       lat_bounds, lon_bounds <1x2 double>
             %           - the min & max values of the region's rectangle
             %           - degrees on [-180, 180]
+            %
+            %       res <1x1 or 1x2 double>
+            %           - sampling resolution in [lat lon] as fractional degrees
+            %           - scalar inputs will be used in both dimensions
+            %           - e.g. 1/120 to sample at 30 arcsec resolution
+            %           - by default, samples at native resolution
             %
             %   Outputs:
             %
@@ -151,15 +161,37 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             %
             %   For more methods, see <a href="matlab:help GeoRasterTile">GeoRasterTile</a>
 
-            lat = this.lat;
-            lon = this.lon;
+            if nargin < 3
+                % sample at native resolution
+                ilat = find(this.lat >= lat_bounds(1) & this.lat <= lat_bounds(2));
+                ilon = find(this.lon >= lon_bounds(1) & this.lon <= lon_bounds(2));
+    
+                % index directly (no interpolation)
+                lat = this.lat(ilat);
+                lon = this.lon(ilon);
+                values = this.raster(ilat, ilon, :);
+            else 
+                % interpolate to custom resolution
+                if isscalar(res)
+                    res = [res res];
+                end
 
-            ilat = find(lat >= lat_bounds(1) & lat <= lat_bounds(2));
-            ilon = find(lon >= lon_bounds(1) & lon <= lon_bounds(2));
+                lat = lat_bounds(1):res(1):lat_bounds(2);
+                lon = lon_bounds(1):res(2):lon_bounds(2);
 
-            lat = lat(ilat);
-            lon = lon(ilon);
-            values = this.raster(ilat, ilon, :);
+                ilat = find(lat >= this.lat(1) & lat <= this.lat(end));
+                ilon = find(lon >= lon_bounds(1) & lon <= lon_bounds(2));
+
+                lat = lat(ilat);
+                lon = lon(ilon);
+
+                if isempty(ilat) || isempty(ilon)
+                    values = []; return
+                end
+
+                [lat_grid, lon_grid] = ndgrid(lat, lon);
+                values = this.get(lat_grid, lon_grid);
+            end
         end
 
         function [bx, by] = bounding_box(this)
@@ -189,6 +221,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                 by = [this.lat([1 end end 1 1]) NaN];
                 
                 % need to adjust by 1/2 pixel at edges to account for grid cell postings
+                % (coords are recorded at pixel center; we want the true edge of grid)
                 dx = diff(this.lon(1:2));
                 dy = diff(this.lat(1:2));
                 bx = bx + ([-dx -dx dx dx -dx NaN] * 0.5);
