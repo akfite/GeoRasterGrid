@@ -18,7 +18,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
     end
 
     properties
-        interp(1,:) char = 'linear' % setting this prop updates interpolant
+        interp(1,:) char = 'cubic' % setting this prop updates interpolant
     end
 
     properties (SetAccess = private)
