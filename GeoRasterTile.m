@@ -32,6 +32,29 @@ classdef GeoRasterTile < matlab.mixin.Copyable
     methods
         function this = GeoRasterTile(raster_file, varargin)
             %GEORASTERTILE Construct an instance of this class.
+            %
+            %   Usage:
+            %
+            %       obj = GEORASTERTILE(raster)
+            %       obj = GEORASTERTILE(raster, lat_extents, lon_extents)
+            %
+            %   Inputs:
+            %
+            %       raster <1xN char or MxNxC numeric>
+            %           - ideally this is the filepath to a geo raster file
+            %             (readable by readgeoraster), but it can also be an
+            %             image or a path to an image if the latitude & longitude
+            %             extents of that image are defined in the 2nd & 3rd args
+            %           - note that rows & columns must be aligned to parallels of
+            %             latitude & meridians of longitude
+            %
+            %       lat_extents, lon_extents <1x2 double>
+            %           - only necessary if geo information is not encoded in the raster
+            %           - values of latitude & longitude at the edges of the raster image
+            %             (be mindful to use the true pixel EDGE--not the pixel center)
+            %           - degrees
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterTile">GeoRasterTile</a>
 
             narginchk(1,3);
             validateattributes(raster_file, {'char','string','numeric'},{});
@@ -69,14 +92,12 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                 error('Unexpected number of input arguments.');
             end
 
-            % create grid vectors
             validateattributes(lat_extents, {'numeric'},{'numel',2});
             validateattributes(lon_extents, {'numeric'},{'numel',2});
 
             % need to offset by 1/2 pixel at edges to account for the grid cell postings
             dx = diff(lon_extents) / size(img,2);
             dy = diff(lat_extents) / size(img,1);
-
             longrid = linspace(min(lon_extents)+dx/2, max(lon_extents)-dx/2, size(img,2));
             latgrid = linspace(min(lat_extents)+dy/2, max(lat_extents)-dy/2, size(img,1));
 
