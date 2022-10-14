@@ -21,7 +21,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
     properties
         capacity(1,1) uint16 = 36 % max number of tiles to store
-        make_tile(1,1) function_handle = @GeoRasterTile
     end
 
     properties (SetAccess = private)
@@ -44,13 +43,13 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
     %% Constructor
     methods
-        function this = GeoRasterGrid(files, tile_builder)
+        function this = GeoRasterGrid(files, read_limits)
             %GEORASTERGRID Constructor.
             %
             %   Usage:
             %
             %       obj = GEORASTERGRID(files)
-            %       obj = GEORASTERGRID(files, tile_builder)
+            %       obj = GEORASTERGRID(files, read_limits)
             %
             %   Inputs:
             %
@@ -79,7 +78,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %             found, the most frequently-occuring filetype will be kept
             %             and the others discarded
             %
-            %       tile_builder (=@GeoRasterTile) <1x1 function_handle>
+            %       read_limits (=@GeoRasterTile.read_limits) <1x1 function_handle>
             %           - function handle to create a GeoRasterTile given the
             %             filepath to a raster
             %           - by default it will support files readable by readgeoraster,
@@ -89,8 +88,9 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %             after parsing info from the filepath (or wherever it is stored)
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
+            
             if nargin < 2
-                tile_builder = @GeoRasterTile;
+                read_limits = @GeoRasterTile.read_limits;
             end
 
             if nargin < 1
@@ -98,7 +98,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             end
 
             validateattributes(files, {'string','char','cell'}, {});
-            validateattributes(capacity, {'numeric'}, {'scalar','positive','integer'});
+            validateattributes(read_limits, {'function_handle'}, {'scalar'});
 
             % enforce common format
             if ~isstring(files)
@@ -124,50 +124,13 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             assert(~isempty(raster_files),'GeoRasterGrid:none_found',...
                 'Failed to find any georaster files.');
 
-            % import metadata (first pass: try to find a .json file that encodes metadata
-            % without requiring the mapping toolbox).  note that we loop so that we can
-            % break early without checking every file, which can be slow over slow networks
-            json_files = raster_files + ".json";
-            json_exists = true;
+            % call user-configurable function to parse tile boundaries
+            [lat_lim, lon_lim] = cellfun(read_limits, raster_files, 'uniform', false);
 
-            for i = 1:numel(json_files)
-                json_exists = json_exists && exist(json_files{i},'file');
-                if ~json_exists, break; end
-            end
-
-            if json_exists % load metadata without mapping toolbox
-                error('Future growth (not yet implemented)')
-            else % import metadata using mapping toolbox
-                [ok, errmsg] = license('checkout','map_toolbox');
-                assert(ok, 'GeoRasterGrid:license_failure', errmsg);
-
-                for i = numel(raster_files):-1:1
-                    info = georasterinfo(raster_files{i});
-                    R = info.RasterReference;
-
-                    % raster coordinates must be parallel to meridians & parallels
-                    validateattributes(R,...
-                        {...
-                            'map.rasterref.GeographicCellsReference', ...
-                            'map.rasterref.GeographicPostingsReference' ...
-                        }, ...
-                        {'scalar'});
-
-                    % assign to class props
-                    this.raster_files(i) = raster_files(i);
-
-                    switch R.AngleUnit
-                        case 'degree'
-                            this.lat_extents(i,:) = R.LatitudeLimits;
-                            this.lon_extents(i,:) = R.LongitudeLimits;
-                        case {'radian', 'radians'} % actually not sure what MATLAB uses...
-                            this.lat_extents(i,:) = R.LatitudeLimits * pi/180;
-                            this.lon_extents(i,:) = R.LongitudeLimits * pi/180;
-                        otherwise
-                            validatestring(R.AngleUnit,{'degree','radian','radians'});
-                    end
-                end
-            end
+            % assign to object
+            this.raster_files = raster_files;
+            this.lat_extents = vertcat(lat_lim{:});
+            this.lon_extents = vertcat(lon_lim{:});
         end
     end
 
@@ -357,6 +320,17 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             % y-axis is inverted, x-axis is normal
             row = this.height - ceil((y - y0)./dy) + 1;
             col = ceil((x - x0)./dx);
+        end
+    end
+
+    %% Static methods
+    methods (Static)
+        function write_json_metadata(files, read_metadata)
+            if nargin < 2
+                read_metadata = @GeoRasterGrid.read_limits;
+            end
+
+
         end
     end
 

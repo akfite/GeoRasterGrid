@@ -317,5 +317,55 @@ classdef GeoRasterTile < matlab.mixin.Copyable
         end
     end
 
+    %% Static methods
+    methods (Static)
+        function [lat_lim, lon_lim] = read_limits(file)
+            [folder,name] = fileparts(file);
+
+            if exist(fullfile(folder, name, '.json'),'file')
+                json_txt = readascii(fullfile(folder, name, '.json'));
+                R = jsondecode(json_txt);
+
+                switch R.AngleUnit
+                    case 'degree'
+                        lat_lim = R.LatitudeLimits;
+                        lon_lim = R.LongitudeLimits;
+                    case {'radian', 'radians'} % actually not sure what MATLAB uses...
+                        lat_lim = R.LatitudeLimits * pi/180;
+                        lon_lim = R.LongitudeLimits * pi/180;
+                    otherwise
+                        validatestring(R.AngleUnit,{'degree','radian','radians'});
+                end
+
+            elseif license('checkout','map_toolbox')
+                info = georasterinfo(file);
+                R = info.RasterReference;
+
+                % raster coordinates must be parallel to lat/lon lines
+                validateattributes(R,...
+                    {...
+                        'map.rasterref.GeographicCellsReference', ...
+                        'map.rasterref.GeographicPostingsReference' ...
+                    }, ...
+                    {'scalar'});
+
+                switch R.AngleUnit
+                    case 'degree'
+                        lat_lim = R.LatitudeLimits;
+                        lon_lim = R.LongitudeLimits;
+                    case {'radian', 'radians'} % actually not sure what MATLAB uses...
+                        lat_lim = R.LatitudeLimits * pi/180;
+                        lon_lim = R.LongitudeLimits * pi/180;
+                    otherwise
+                        validatestring(R.AngleUnit,{'degree','radian','radians'});
+                end
+            else
+                error('GeoRasterTile:read_limits:parse_fail',...
+                    ['Failed to parse latitude & longitude limits from file.  You can define ' ...
+                    'your own function to parse the limits if this default doesn''t work.']);
+            end
+        end
+    end
+
 end
 
