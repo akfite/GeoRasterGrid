@@ -215,6 +215,25 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             end
         end
 
+        function flag = contains(this, lat, lon)
+            %GEORASTERTILE/CONTAINS Check if the tile contains some point(s).
+            %
+            %
+
+            assert(isscalar(this),'GeoRasterTile:scalar_only',...
+                'GeoRasterTile/contains cannot operate on more than one object at once.');
+            
+            lat_grid = this.lat;
+            lon_grid = this.lon;
+            dx = diff(lon_grid(1:2));
+            dy = diff(lat_grid(1:2));
+
+            flag = lat >= (lat_grid(1) - dy/2) ...
+                & lat <= (lat_grid(end) + dy/2) ...
+                & lon >= (lon_grid(1) - dx/2) ...
+                & lon <= (lon_grid(end) + dx/2);
+        end
+
         function [bx, by] = bounding_box(this)
             %GEORASTERTILE/BOUNDING_BOX Get bounding box coordinates in degrees.
             %

@@ -162,11 +162,11 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
             if nargin == 2
-                lat = rad2deg(varargin{1}(:,1));
-                lon = rad2deg(varargin{1}(:,2));
+                lat = varargin{1}(:,1);
+                lon = varargin{1}(:,2);
             else
-                lat = rad2deg(varargin{1}(:));
-                lon = rad2deg(varargin{2}(:));
+                lat = varargin{1}(:);
+                lon = varargin{2}(:);
             end
 
             idx = this.latlon2tileindex(lat, lon);
@@ -273,23 +273,19 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
     %% Private helper methods
     methods (Access = private)
         function load_tile(this, index)
-            data = load(this.paths{index});
+            tile = GeoRasterTile(this.paths{index});
 
             if numel(this.tiles) == this.capacity
                 % delete the first to make room (first in, first out)
+                delete(this.tiles(1));
                 this.tiles(1) = [];
-                this.lat(1,:) = [];
-                this.lon(1,:) = [];
-                this.index(1) = [];
             end
 
-            this.tiles{end+1} = data.landmass;
-            this.lat(end+1,:) = this.lat_extents(index,:);
-            this.lon(end+1,:) = this.lon_extents(index,:);
-            this.index(end+1) = index;
+            this.tiles(end+1) = tile;
         end
 
         function idx = latlon2tileindex(this, lat, lon)
+            % "i" is the tile index, and "j" is the query index
             [i,j] = find(...
                 lat(:)' >= this.lat_extents(:,1) & lat(:)' < this.lat_extents(:,2) ...
                 & ...
@@ -298,9 +294,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             % pre-allocate output to the correct size in case some entries
             % were not found
             idx = nan(size(lat));
-
-            % we made a 96 x N matrix, where N is numel(lat) or numel(lon).  so
-            % "i" is the tile index, and "j" is the query index
             idx(j) = i;
         end
 
