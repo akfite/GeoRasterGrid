@@ -38,6 +38,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
         lon_extents(:,2) double % bounds of each raster; degrees
     end
 
+    properties (Access = private)
+        hfig % currently-displayed figure
+    end
+
     properties (Constant, Hidden)
         % list of supported file extensions
         supported_filetypes = [
@@ -241,46 +245,67 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %
             %   Description:
             %
-            %       Displays the tiles that the object currently has cached on
-            %       a world map.
+            %       Displays the state of the map on a 
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
-            hfig = figure;
-            colordef(hfig,'black'); %#ok<*COLORDEF>
-            ax = axes('nextplot','add');
-            colormap(ax,'gray');
-
             N = numel(this.raster_files);
 
-            % overlay on map of the Earth
-            earth_texture = imread('world_map.jpg');
-            image(...
-                linspace(-180,180, size(earth_texture,2)), ...
-                fliplr(linspace(-90,90, size(earth_texture,1))), ...
-                earth_texture, ...
-                'parent', ax)
+            if isempty(this.hfig) || ~isvalid(this.hfig)
+                this.hfig = figure('Name',class(this),'NumberTitle','off');
+                colordef(this.hfig,'black'); %#ok<*COLORDEF>
+                ax = axes('nextplot','add','parent',this.hfig);
+                colormap(ax,'gray');
 
-            % show the outline of all the possible tiles in gray
-            bx = nan(6,N);
-            by = nan(6,N);
-            for i = 1:N
-                bx(1:5,i) = this.lon_extents(i,[1 1 2 2 1]);
-                by(1:5,i) = this.lat_extents(i,[1 2 2 1 1]);
+                % overlay on map of the Earth
+                earth_texture = imread('world_map.jpg');
+                image(...
+                    linspace(-180,180, size(earth_texture,2)), ...
+                    linspace(90,-90, size(earth_texture,1)), ...
+                    earth_texture, ...
+                    'parent', ax)
+    
+                % show the outline of all the possible tiles in gray
+                bx = nan(6,N);
+                by = nan(6,N);
+                for i = 1:N
+                    bx(1:5,i) = this.lon_extents(i,[1 1 2 2 1]);
+                    by(1:5,i) = this.lat_extents(i,[1 2 2 1 1]);
+                end
+                plot(ax,bx(:),by(:),':',...
+                    'Color',[0.5 0.5 0.5],... gray
+                    'HitTest','off');
+
+                box(ax,'on');
+                xlim(ax,[-180 180]);
+                ylim(ax,[-90 90]);
+                xlabel(ax,'longitude (degrees)');
+                ylabel(ax,'latitude (degrees)');
+            else
+                ax = findobj(this.hfig,'type','axes');
             end
-            plot(ax,bx(:),by(:),':','color',[0.5 0.5 0.5]);
 
-            % overlay the currently-loaded tiles
-            shapes = polyshape(this.tiles);
-            plot(shapes, 'FaceColor','r','FaceAlpha',0.25,'parent',ax,'EdgeColor','r')
+            delete(findobj(ax,'tag','active-tiles'));
 
-            box(ax,'on');
-            xlim(ax,[-180 180]);
-            ylim(ax,[-90 90]);
-            title(ax, sprintf('%s: %d/%d capacity', ...
-                class(this), numel(this.tiles), this.capacity));
-            xlabel(ax,'longitude (degrees)');
-            ylabel(ax,'latitude (degrees)');
+            % refresh overlay of tiles currently in memory
+            if ~isempty(this.tiles)
+                shapes = polyshape(this.tiles);
+                plot(shapes, ...
+                    'FaceColor','r',...
+                    'FaceAlpha',0.25,...
+                    'parent',ax,...
+                    'EdgeColor','r',...
+                    'HitTest','off',...
+                    'Tag','active-tiles');
+            end
+
+            title(ax, sprintf('%s: %d of %d grid tiles in memory (max capacity = %d)', ...
+                class(this), ...
+                numel(this.tiles), ...
+                numel(this.raster_files), ...
+                this.capacity));
+
+            drawnow;
         end
     end
 
@@ -298,6 +323,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
             this.tiles(end+1) = tile;
             this.index(end+1) = index;
+
+            if ~isempty(this.hfig) && isvalid(this.hfig)
+                show(this); % refresh plot if already active
+            end
         end
 
         function idx = latlon2tileindex(this, lat, lon)
