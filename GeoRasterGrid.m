@@ -39,8 +39,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
     end
 
     properties (Access = private)
-        % currently-displayed figure
-        hfig
+        % currently-displayed axis
+        ax
 
         % metadata to enable performance optimization
         lat_intervals(:,2) double
@@ -360,26 +360,37 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             value = reshape(value, [orig_sz size(value,3)]);
         end
         
-        function ax = show(this)
+        function ax = show(this, ax)
             %GEORASTERGRID/SHOW Display the current state of the map.
             %
             %   Usage:
             %
             %       ax = obj.show()
+            %       ax = obj.show(ax)
             %
             %   Description:
             %
-            %       Displays the state of the map on a 
+            %       Displays the state of the map into an axis.  If no axis is provided,
+            %       a new figure will be created to host the axis.
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
             N = numel(this.raster_files);
 
-            if isempty(this.hfig) || ~isvalid(this.hfig)
-                this.hfig = figure('Name',class(this),'NumberTitle','off');
-                colordef(this.hfig,'black'); %#ok<*COLORDEF>
-                ax = axes('nextplot','add','parent',this.hfig);
+            if nargin < 2
+                ax = this.ax;
+            end
+
+            if isempty(ax) || ~isvalid(ax)
+                hfig = figure('Name',class(this),'NumberTitle','off');
+                colordef(hfig,'black'); %#ok<*COLORDEF>
+                ax = axes('nextplot','add','parent',hfig);
                 colormap(ax,'gray');
+            end
+
+            % first-time setup
+            if isempty(ax.Children)
+                hold(ax,'on');
 
                 % overlay on map of the Earth
                 earth_texture = imread('world_map.jpg');
@@ -397,7 +408,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                     by(1:5,i) = this.lat_extents(i,[1 2 2 1 1]);
                 end
                 plot(ax,bx(:),by(:),':',...
-                    'Color',[0.5 0.5 0.5],... gray
+                    'Color',[0.75 0.75 0.75],... gray
                     'HitTest','off');
 
                 box(ax,'on');
@@ -408,8 +419,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 axis(ax,'equal');
                 axis(ax,'tight');
                 zoom(ax,'on');
-            else
-                ax = findobj(this.hfig,'type','axes');
             end
 
             delete(findobj(ax,'tag','active-tiles'));
@@ -432,6 +441,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 numel(this.raster_files), ...
                 this.capacity));
 
+            this.ax = ax;
             drawnow;
         end
     end
@@ -454,8 +464,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             this.tiles(end+1) = tile;
             this.index(end+1) = index;
 
-            if ~isempty(this.hfig) && isvalid(this.hfig)
-                show(this); % refresh plot if already active
+            if ~isempty(this.ax) && isvalid(this.ax)
+                show(this, this.ax); % refresh plot if already active
             end
         end
 
