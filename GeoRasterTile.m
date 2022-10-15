@@ -258,7 +258,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
 
             if isscalar(this)
                 bx = [this.lon([1 1 end end 1]) NaN];
-                by = [this.lat([1 end end 1 1]) NaN];
+                by = [this.lat([end 1 1 end end]) NaN];
                 
                 % need to adjust by 1/2 pixel at edges to account for grid cell postings
                 % (coords are recorded at pixel center; we want the true edge of grid)
@@ -266,12 +266,15 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                 dy = diff(this.lat(1:2));
                 bx = bx + ([-dx -dx dx dx -dx NaN] * 0.5);
                 by = by + ([-dy dy dy -dy -dy NaN] * 0.5);
+
+                bx = bx';
+                by = by';
             else
-                bx = nan(numel(this), 6);
-                by = nan(numel(this), 6);
+                bx = nan(6,numel(this));
+                by = nan(6,numel(this));
 
                 for i = 1:numel(this)
-                    [bx(i,:), by(i,:)] = this(i).bounding_box(); % call w/ scalar obj
+                    [bx(:,i), by(:,i)] = this(i).bounding_box(); % call w/ scalar obj
                 end
             end
         end
@@ -297,8 +300,8 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             %   For more methods, see <a href="matlab:help GeoRasterTile">GeoRasterTile</a>
 
             [bx,by] = this.bounding_box();
-            for i = 1:size(bx,1)
-                shape(i,1) = polyshape(bx(1:4), by(1:4), 'simplify', false); %#ok<AGROW> 
+            for i = 1:numel(this)
+                shape(i,1) = polyshape(bx(1:4,i), by(1:4,i), 'simplify', false); %#ok<AGROW> 
             end
         end
     end
@@ -324,11 +327,11 @@ classdef GeoRasterTile < matlab.mixin.Copyable
         end
 
         function lat = get.lat(this)
-            lat = this.interpolant.GridVectors{2};
+            lat = this.interpolant.GridVectors{1};
         end
 
         function lon = get.lon(this)
-            lon = this.interpolant.GridVectors{1};
+            lon = this.interpolant.GridVectors{2};
         end
     end
 
@@ -369,8 +372,8 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                         lat_lim = R.LatitudeLimits;
                         lon_lim = R.LongitudeLimits;
                     case {'radian', 'radians'} % actually not sure what MATLAB uses...
-                        lat_lim = R.LatitudeLimits * pi/180;
-                        lon_lim = R.LongitudeLimits * pi/180;
+                        lat_lim = R.LatitudeLimits * 180/pi;
+                        lon_lim = R.LongitudeLimits * 180/pi;
                     otherwise
                         validatestring(R.AngleUnit,{'degree','radian','radians'});
                 end

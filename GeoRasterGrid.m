@@ -251,41 +251,32 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             ax = axes('nextplot','add');
             colormap(ax,'gray');
 
-            dx = GeoRasterGrid.dx; %#ok<*PROP>
-            dy = GeoRasterGrid.dy;
+            N = numel(this.raster_files);
 
             % overlay on map of the Earth
-            earth_texture = imread('landOcean.jpg');
+            earth_texture = imread('world_map.jpg');
             image(...
                 linspace(-180,180, size(earth_texture,2)), ...
                 fliplr(linspace(-90,90, size(earth_texture,1))), ...
                 earth_texture, ...
                 'parent', ax)
 
-            % overlay the currently-loaded tiles
-            for i = 1:numel(this.tiles)
-                lat = fliplr(linspace(this.lat(i,1)+dy/2, this.lat(i,2)-dy/2, this.height));
-                lon = linspace(this.lon(i,1)+dx/2, this.lon(i,2)-dx/2, this.width);
-                imagesc(lon,lat,this.tiles{i},'parent',ax);
-            end
-
             % show the outline of all the possible tiles in gray
-            for i = 1:numel(this.paths)
-                [bx,by] = griddata2d(this.lon_extents(i,:), this.lat_extents(i,:));
-                plot(ax,bx,by,':','color',[0.5 0.5 0.5]);
+            bx = nan(6,N);
+            by = nan(6,N);
+            for i = 1:N
+                bx(1:5,i) = this.lon_extents(i,[1 1 2 2 1]);
+                by(1:5,i) = this.lat_extents(i,[1 2 2 1 1]);
             end
+            plot(ax,bx(:),by(:),':','color',[0.5 0.5 0.5]);
 
-            % show the outline of all the cached tiles in red
-            for i = 1:numel(this.tiles)
-                [bx,by] = griddata2d(this.lon(i,:), this.lat(i,:));
-                plot(ax,bx,by,'r-');
-            end
+            % overlay the currently-loaded tiles
+            shapes = polyshape(this.tiles);
+            plot(shapes, 'FaceColor','r','FaceAlpha',0.25,'parent',ax,'EdgeColor','r')
 
             box(ax,'on');
-
             xlim(ax,[-180 180]);
             ylim(ax,[-90 90]);
-
             title(ax, sprintf('%s: %d/%d capacity', ...
                 class(this), numel(this.tiles), this.capacity));
             xlabel(ax,'longitude (degrees)');
@@ -338,17 +329,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             % y-axis is inverted, x-axis is normal
             row = this.height - ceil((y - y0)./dy) + 1;
             col = ceil((x - x0)./dx);
-        end
-    end
-
-    %% Static methods
-    methods (Static)
-        function write_json_metadata(files, read_metadata)
-            if nargin < 2
-                read_metadata = @GeoRasterGrid.read_limits;
-            end
-
-
         end
     end
 
