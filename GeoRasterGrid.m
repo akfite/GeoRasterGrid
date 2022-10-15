@@ -39,7 +39,13 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
     end
 
     properties (Access = private)
-        hfig % currently-displayed figure
+        % currently-displayed figure
+        hfig
+
+        % metadata to enable performance optimization
+        lat_intervals(:,2) double
+        lon_intervals(:,2) double
+        grid_idx_map(:,:) double
     end
 
     properties (Constant, Hidden)
@@ -169,13 +175,102 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             this.raster_files = raster_files;
             this.lat_extents = vertcat(lat_lim{:});
             this.lon_extents = vertcat(lon_lim{:});
+
+            % performance optimization for uniformly-gridded data will improve the time it
+            % takes to lookup the correct tile for each lat/lon from O(n_tiles) to O(1).
+            % when tested on a dataset with 10k+ tiles, lookup speed was >700x faster
+            ok = precompute_grid_mapping(this);
+
+            if ~ok
+                warning('GeoRasterGrid:optimization_failed',...
+                    'Raster grid edges are not aligned; performance optimizations disabled.');
+            end
+        end
+
+        function is_optimized = precompute_grid_mapping(this)
+            is_optimized = false;
+
+            % check that all tiles are aligned to the same grid lines and that none overlap
+            checked = false(size(this.raster_files));
+            cy = mean(this.lat_extents,2);
+            y_intervals = [];
+
+            for i = 1:numel(this.raster_files)
+                if checked(i), continue; end
+
+                start_lat = this.lat_extents(i,1);
+                end_lat = this.lat_extents(i,2);
+                
+                % find all tiles that have a center point inside this interval
+                icheck = cy >= start_lat & cy <= end_lat;
+                grid_start = uniquetol(this.lat_extents(icheck,1), 1e-12);
+                grid_end = uniquetol(this.lat_extents(icheck,2), 1e-12);
+
+                if numel(grid_start) > 1 || numel(grid_end) > 1
+                    % grids are not aligned; abort
+                    return
+                else
+                    % don't check these tiles again
+                    checked(icheck) = true;
+                    y_intervals = vertcat(y_intervals, [grid_start grid_end]);
+                end
+            end
+
+            checked = false(size(this.raster_files));
+            cx = mean(this.lon_extents,2);
+            x_intervals = [];
+
+            for i = 1:numel(this.raster_files)
+                if checked(i), continue; end
+                
+                start_lon = this.lon_extents(i,1);
+                end_lon = this.lon_extents(i,2);
+                
+                % find all tiles that have a center point inside this interval
+                icheck = cx >= start_lon & cx <= end_lon;
+                grid_start = uniquetol(this.lon_extents(icheck,1), 1e-12);
+                grid_end = uniquetol(this.lon_extents(icheck,2), 1e-12);
+
+                if numel(grid_start) > 1 || numel(grid_end) > 1
+                    % grids are not aligned; abort
+                    return
+                else
+                    % don't check these tiles again
+                    checked(icheck) = true;
+                    x_intervals = vertcat(x_intervals, [grid_start grid_end]);
+                end
+            end
+
+            % OK, tiles are aligned to the same grid--we can optimize this! start
+            % by sorting the intervals
+            x_intervals = sortrows(x_intervals);
+            y_intervals = sortrows(y_intervals);
+
+            % check that intervals never overlap
+            if any(x_intervals(2:end,1) - x_intervals(1:end-1,2) < 0)
+                return
+            end
+            if any(y_intervals(2:end,1) - y_intervals(1:end-1,2) < 0)
+                return
+            end
+
+            % define a dense grid and map indices from the dense grid to the sparse grid
+            center_lon = mean(x_intervals,2);
+            center_lat = mean(y_intervals,2);
+            [center_lat, center_lon] = ndgrid(center_lat, center_lon);
+
+            this.grid_idx_map = latlon2tileindex(this, center_lat, center_lon);
+            this.lon_intervals = x_intervals;
+            this.lat_intervals = y_intervals;
+
+            is_optimized = true;
         end
     end
 
     %% Public interface
     methods
         function value = get(this, lat, lon, idx)
-            %GEORASTERGRID/get Interpolate the value at specific lat/lon point(s).
+            %GEORASTERGRID/GET Interpolate the value at specific lat/lon point(s).
             %
             %   Usage (assuming map is a 1x1 GeoRasterGrid):
             %
@@ -364,16 +459,55 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
         end
 
         function idx = latlon2tileindex(this, lat, lon)
-            % "i" is the tile index, and "j" is the query index
-            [i,j] = find(...
-                lat(:)' >= this.lat_extents(:,1) & lat(:)' <= this.lat_extents(:,2) ...
-                & ...
-                lon(:)' >= this.lon_extents(:,1) & lon(:)' <= this.lon_extents(:,2));
+            %GEORASTERGRID/LATLON2TILEINDEX Fast tile lookup for many lat-lon points.
+            %
+            %   Usage:
+            %
+            %       idx = obj.LATLON2TILEINDEX(lat, lon)
+            %
+            %   Inputs:
+            %
+            %       lat, lon <double matrix>
+            %           - geodetic latitude & longitude
+            %
+            %   Outputs:
+            %
+            %       idx <double matrix>
+            %           - the index to the tile that contains each lat-lon pair
+            %           - NaN if no tile contains a point
+            %           - matches the size of the input arrays
+            %
+            %   Notes:
+            %
+            %       This method attempts to use an O(1) solution, but it requires that
+            %       the tiles are aligned to a uniform grid.  If the tiles are not aligned,
+            %       a brute-force O(n_tiles) method will be employed instead.
 
-            % pre-allocate output to the correct size in case some entries
-            % were not found
-            idx = nan(size(lat));
-            idx(j) = i;
+            if ~isempty(this.grid_idx_map)
+                idx = local_optimized_lookup(lat, lon);
+            else
+                idx = local_bruteforce_lookup(lat, lon);
+            end
+
+            function index = local_optimized_lookup(lat, lon)
+                % O(1) solution
+                ix = findinterval(this.lon_intervals(:,1), this.lon_intervals(:,2), lon);
+                iy = findinterval(this.lat_intervals(:,1), this.lat_intervals(:,2), lat);
+                imap = sub2ind(size(this.grid_idx_map), iy, ix);
+                index = this.grid_idx_map(imap);
+            end
+
+            function index = local_bruteforce_lookup(lat, lon)
+                % O(n_tiles) solution
+                [i,j] = find(... "i" is the tile index, and "j" is the query index
+                    lat(:)' >= this.lat_extents(:,1) & lat(:)' <= this.lat_extents(:,2) ...
+                    & ...
+                    lon(:)' >= this.lon_extents(:,1) & lon(:)' < this.lon_extents(:,2));
+    
+                % allocate output & only fill out the entries that were found
+                index = nan(size(lat));
+                index(j) = i;
+            end
         end
     end
 
