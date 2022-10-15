@@ -88,13 +88,15 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %             and the others discarded
             %
             %       read_limits (=@GeoRasterTile.read_limits) <1x1 function_handle>
-            %           - function handle to create a GeoRasterTile given the
-            %             filepath to a raster
+            %           - function handle to read the latitude & longitude limits of
+            %             the raster given its filepath
             %           - by default it will support files readable by readgeoraster,
             %             but if the data is in some custom format (e.g. JPEG2000 with
             %             geospatial info encoded in the filepath) the function can be
-            %             replaced with a wrapper that calls GeoRasterTile with 2+ inputs
-            %             after parsing info from the filepath (or wherever it is stored)
+            %             replaced with a user-defined method
+            %           - user-defined functions must accept 1 input (the filepath to
+            %             a raster file) and return two outputs: [min_lat max_lat], and
+            %             [min_lon max_lon] for that file
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
             
@@ -281,6 +283,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 ylim(ax,[-90 90]);
                 xlabel(ax,'longitude (degrees)');
                 ylabel(ax,'latitude (degrees)');
+                axis(ax,'equal');
+                axis(ax,'tight');
             else
                 ax = findobj(this.hfig,'type','axes');
             end
@@ -291,10 +295,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             if ~isempty(this.tiles)
                 shapes = polyshape(this.tiles);
                 plot(shapes, ...
-                    'FaceColor','r',...
+                    'FaceColor','g',...
                     'FaceAlpha',0.25,...
                     'parent',ax,...
-                    'EdgeColor','r',...
+                    'EdgeColor','g',...
                     'HitTest','off',...
                     'Tag','active-tiles');
             end
@@ -312,7 +316,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
     %% Private helper methods
     methods (Access = private)
         function tile = load_tile(this, index)
-            tile = GeoRasterTile(this.raster_files{index});
+            tile = GeoRasterTile(...
+                this.raster_files{index}, ...
+                this.lat_extents(index,:), ...
+                this.lon_extents(index,:));
 
             if numel(this.tiles) == this.capacity
                 % delete the first to make room (first in, first out)
@@ -340,24 +347,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             % were not found
             idx = nan(size(lat));
             idx(j) = i;
-        end
-
-        function [row,col] = latlon2rowcol(this, lat, lon, index)
-            dx = GeoRasterGrid.dx;
-            dy = GeoRasterGrid.dy;
-
-            % x0 and y0 are the pixel edge, so dx/dy will step us across whole
-            % pixels (as opposed to starting at pixel center, which would step
-            % across two half-pixels)
-            x0 = this.lon(index,1);
-            y0 = this.lat(index,1);
-
-            x = lon;
-            y = lat;
-
-            % y-axis is inverted, x-axis is normal
-            row = this.height - ceil((y - y0)./dy) + 1;
-            col = ceil((x - x0)./dx);
         end
     end
 
