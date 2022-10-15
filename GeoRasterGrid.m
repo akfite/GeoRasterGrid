@@ -1,8 +1,10 @@
 classdef GeoRasterGrid < matlab.mixin.Copyable
-%GEORASTERGRID Manage gridded geospatial information.
+%GEORASTERGRID Manage gridded geospatial raster data.
 %
 %   obj = GEORASTERGRID(___) manages a tiled dataset of geospatial information
-%   from one or more georaster files.
+%   from multiple georaster files.  It provides optimized access to raster values and
+%   can scale up to datasets too large to fit in memory.  It is primarily intended to
+%   be used with sets of GeoTIFF, .dt0/1/2, or other georaster data files.
 %
 %   Methods:
 %
