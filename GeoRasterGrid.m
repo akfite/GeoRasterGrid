@@ -26,7 +26,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
     properties (SetAccess = private)
         % current tiles loaded in memory
         tiles(:,1) GeoRasterTile
+        index(:,1) double % index to each tile that is currently-loaded
+    end
 
+    properties (SetAccess = private)
         % metadata about ALL tiles
         raster_files(:,1) string % filepath to each raster
         lat_extents(:,2) double % bounds of each raster; degrees
@@ -136,77 +139,95 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
     %% Public interface
     methods
-        function value = get(this, varargin)
+        function value = get(this, lat, lon, idx)
             %GEORASTERGRID/get Interpolate the value at specific lat/lon point(s).
             %
             %   Usage (assuming map is a 1x1 GeoRasterGrid):
             %
             %       value = map.get(lat, lon)
-            %       value = map.get(lla <Nx2 or Nx3>)
+            %       value = map.get(lat, lon, idx)
             %
             %   Inputs:
             %
-            %       lat <vector of latitudes>
+            %       lat <double matrix>
             %           - geodetic latitude (degrees)
             %           - positive North from equator
             %
-            %       lon <vector of longitudes>
+            %       lon <double matrix>
             %           - geodetic longitude (degrees)
             %           - positive East from Greenwich meridian
             %
+            %       idx <double matrix>
+            %           - optional; purely a performance optimzation
+            %           - this is the index into the tile that each lat/lon pair
+            %             will be sourced from (in case the caller can more
+            %             efficiently calculate it)
+            %
             %   Outputs:
             %
-            %       value <Nx1 BackgroundType>
-            %           - the classification of each input point
+            %       value <Nx1xC double>
+            %           - the raster value at each lat/lon point
+            %           - 3rd dimension reserved for multi-channel raster values
+            %             (i.e. an RGB raster will return Nx1x3)
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
-            if nargin == 2
-                lat = varargin{1}(:,1);
-                lon = varargin{1}(:,2);
-            else
-                lat = varargin{1}(:);
-                lon = varargin{2}(:);
+            assert(all(size(lat) == size(lon)), ...
+                'GeoRasterGrid:size_mismatch', ...
+                'Latitude & longitude must have the same size.');
+            assert(ismatrix(lat) && ismatrix(lon), ...
+                'GeoRasterGrid:not_matrix', ...
+                'Both latitude & longitude must be matrices (2d arrays)');
+
+            orig_sz = size(lat);
+
+            lat = lat(:);
+            lon = lon(:);
+
+            if nargin < 4
+                idx = this.latlon2tileindex(lat, lon);
             end
 
-            idx = this.latlon2tileindex(lat, lon);
+            idx = idx(:);
 
-            % get unique, non-nan indices.  these are the tiles we
-            % need to access
+            % get index to all tiles we'll need to access
             unique_tiles = unique(idx);
             unique_tiles = unique_tiles(~isnan(unique_tiles));
 
-            % process cached (already-loaded) tiles first (do this by
-            % putting cached indices at the front of the array)
+            % process cached (already-loaded) tiles first by
+            % putting the cached indices at the front of the array
             icached = ismember(unique_tiles, this.index);
             unique_tiles = [unique_tiles(icached); unique_tiles(~icached)];
             n_cached = sum(icached);
 
             % pre-allocate output
-            value = repmat(BackgroundType.INVALID, size(idx));
+            value = nan(size(idx));
 
-            % process in batches, tile-by-tile
+            % process in batches, tile-by-tile (starting with those already in memory)
             for i = 1:numel(unique_tiles)
-                tile = unique_tiles(i);
+                tile_idx = unique_tiles(i); % index of tile to load
+                iout = find(idx == tile_idx); % index into output array
 
-                if i > n_cached
-                    this.load_tile(tile);
+                if i <= n_cached
+                    % tile is already in memory
+                    tile = this.tiles(this.index == tile_idx);
+                else
+                    % not in memory; load from disk
+                    tile = this.load_tile(tile_idx);
                 end
 
-                % get index into output array
-                iout = find(idx == tile);
+                % GeoRasterTile object manages value lookup
+                raster_values = tile.get(lat(iout), lon(iout));
+                
+                % if the raster is multi-channel, we need to adjust our pre-allocated array
+                if size(raster_values,3) ~= size(value,3)
+                    value = repmat(value, [1 1 size(raster_values,3)]);
+                end
 
-                % get index into cached tiles
-                icached = this.index == tile;
-
-                % convert lat/lon to tile (image) coordinates
-                [row,col] = this.latlon2rowcol(lat(iout), lon(iout), icached);
-
-                % get image value at each pixel--images are valued 1 where land
-                % mass exists, and 0 where ocean exists
-                ind = sub2indq([this.height this.width], row, col);
-                value(iout) = this.tiles{icached}(ind);
+                value(iout,1,:) = raster_values;
             end
+
+            value = reshape(value, [orig_sz size(value,3)]);
         end
         
         function ax = show(this)
@@ -272,24 +293,26 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
     %% Private helper methods
     methods (Access = private)
-        function load_tile(this, index)
-            tile = GeoRasterTile(this.paths{index});
+        function tile = load_tile(this, index)
+            tile = GeoRasterTile(this.raster_files{index});
 
             if numel(this.tiles) == this.capacity
                 % delete the first to make room (first in, first out)
                 delete(this.tiles(1));
                 this.tiles(1) = [];
+                this.index(1) = [];
             end
 
             this.tiles(end+1) = tile;
+            this.index(end+1) = index;
         end
 
         function idx = latlon2tileindex(this, lat, lon)
             % "i" is the tile index, and "j" is the query index
             [i,j] = find(...
-                lat(:)' >= this.lat_extents(:,1) & lat(:)' < this.lat_extents(:,2) ...
+                lat(:)' >= this.lat_extents(:,1) & lat(:)' <= this.lat_extents(:,2) ...
                 & ...
-                lon(:)' >= this.lon_extents(:,1) & lon(:)' < this.lon_extents(:,2));
+                lon(:)' >= this.lon_extents(:,1) & lon(:)' <= this.lon_extents(:,2));
 
             % pre-allocate output to the correct size in case some entries
             % were not found

@@ -102,7 +102,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             latgrid = linspace(min(lat_extents)+dy/2, max(lat_extents)-dy/2, size(img,1));
 
             % TODO: assume standard image coords, but use info from R if possible
-            latgrid = fliplr(latgrid);
+%             img = flipud(img);
 
             [latgrid, longrid] = ndgrid(latgrid, longrid);
 
@@ -124,7 +124,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             %
             %       lat, lon <double matrix>
             %           - the query points
-            %           - degrees on the interval [-180, 180]
+            %           - degrees on the interval [-90,90] and [-180, 180]
             %           - must be the same size
             %
             %   Outputs:
@@ -329,10 +329,6 @@ classdef GeoRasterTile < matlab.mixin.Copyable
 
         function lon = get.lon(this)
             lon = this.interpolant.GridVectors{1};
-        end
-
-        function m = get.interp(this)
-            m = this.interpolant.Method;
         end
     end
 
