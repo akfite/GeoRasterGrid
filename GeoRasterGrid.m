@@ -119,6 +119,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             raster_files = files(isfile(files)); % take filepaths as-is
             files(isfile(files)) = []; % do not search under filepaths
 
+            % accumulate files for backup search so that we don't crawl through
+            % the filesystem twice
+            all_files = string.empty;
+
             % search remaining folders for raster files
             for i = 1:numel(files)
                 found_files = dir(fullfile(files{i}, '**\*.*'));
@@ -128,12 +132,35 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 isgeoraster = contains(ext, this.supported_filetypes, 'ignorecase', true);
 
                 if any(isgeoraster)
-                    raster_files = vertcat(raster_files, found_files(isgeoraster)); %#ok<*AGROW> 
+                    % found expected file type; add to list
+                    raster_files = vertcat(raster_files, found_files(isgeoraster)); %#ok<*AGROW>
+                else
+                    % accumulate for backup search of non-standard image types
+                    all_files = vertcat(all_files, found_files);
                 end
             end
 
-            assert(~isempty(raster_files),'GeoRasterGrid:none_found',...
-                'Failed to find any georaster files.');
+            % last-ditch effort: check for other image file types if user provided a
+            % custom read function and some directory to search
+            if isempty(raster_files) && ~isequal(read_limits, @GeoRasterTile.read_limits)
+                [~,~,ext] = fileparts(all_files);
+
+                isgeoraster = contains(ext, ...
+                    [".jp2",".jpeg2000",".png",".jpg",".jpeg",".bmp"], ...
+                    'ignorecase', true);
+
+                if any(isgeoraster)
+                    raster_files = all_files(isgeoraster);
+                end
+            end
+
+            assert(~isempty(raster_files),'GeoRasterGrid:none_found', ...
+                'Failed to find any raster files.');
+
+            % check that all files have the same extension
+            [~,~,ext] = fileparts(raster_files);
+            assert(numel(unique(lower(ext))) == 1, 'GeoRasterGrid:mixed_types', ...
+                'All files must have the same extension (no mixing of filetypes allowed)');
 
             % call user-configurable function to parse tile boundaries
             [lat_lim, lon_lim] = cellfun(read_limits, raster_files, 'uniform', false);
