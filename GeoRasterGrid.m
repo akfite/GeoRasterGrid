@@ -280,6 +280,14 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
             value = reshape(value, [orig_sz size(value,3)]);
         end
+
+        function [value, lat, lon] = roi(this, lat_lim, lon_lim)
+
+            % first try a shortcut: if diagonal corners are in the same tile, it
+            % follows that every other point is in the same tile
+            corner_tile = this.latlon2tileindex(lat_lim(:), lon_lim(:));
+
+        end
         
         function ax = show(this, ax)
             %GEORASTERGRID/SHOW Display the current state of the map.
