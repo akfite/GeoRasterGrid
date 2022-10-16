@@ -328,8 +328,29 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 res = 1024;
             end
 
-            if res == -1 % sample the tiles directly (at native resolution)
-                
+            % it's easy to mess up the input order--let's make it hard to mess up
+            lat_lim = sort(lat_lim);
+            lon_lim = sort(lon_lim);
+
+            if res == -1 % sample at native resolution
+                % first step is to figure out which tiles are involved
+                dx = min(abs(diff(lat_lim)), min(diff(this.lon_extents,[],2)));
+                dy = min(abs(diff(lon_lim)), min(diff(this.lat_extents,[],2)));
+
+                lat_grid = lat_lim(1):(dy/3):lat_lim(2);
+                lon_grid = lon_lim(1):(dx/3):lon_lim(2);
+                [lat_grid,lon_grid] = ndgrid(lat_grid, lon_grid);
+                idx = this.latlon2tileindex(lat_grid, lon_grid);
+                unique_tiles = unique(idx(:));
+
+                for i = 1:numel(unique_tiles)
+                    tile = this.get_tile(unique_tiles(i));
+
+                    if i == 1
+                        % first-time setup: figure out problem size, pre-allocate, etc
+
+                    end
+                end
             else
                 % sample at custom resolution (interpolate)
                 validateattributes(res, {'numeric'},{'scalar','positive','real'});
@@ -360,44 +381,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 else
                     % data spans multiple tiles
                     value = this.get(lat_grid, lon_grid);
-                end
-            end
-        end
-
-        function tile = get_tile(this, lat, lon)
-            %GEORASTERGRID/GET_TILE Access the tile that contains a lat/lon point.
-            %
-            %   Usage (assuming map is a 1x1 GeoRasterGrid):
-            %
-            %       tile = map.get_tile(lat, lon)
-            %
-            %   Inputs:
-            %
-            %       lat, lon <1x1 numeric>
-            %           - a latitude & longitude point
-            %           - degrees
-            %
-            %   Outputs:
-            %
-            %       tile <1x1 GeoRasterTile>
-            %           - the tile that contains the point
-            %           - if no tile contains the point, will be empty
-            %
-            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
-
-            validateattributes(lat,{'numeric'},{'scalar','real'});
-            validateattributes(lon,{'numeric'},{'scalar','real'});
-
-            idx = this.latlon2tileindex(lat, lon);
-            itile = this.index == idx;
-
-            if any(itile)
-                tile = this.tiles(itile);
-            else
-                if ~isnan(idx)
-                    tile = this.load_tile(idx);
-                else
-                    tile = GeoRasterTile.empty;
                 end
             end
         end
@@ -490,6 +473,34 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
     %% Private helper methods
     methods (Access = private)
+        function tile = get_tile(this, idx)
+            %GEORASTERGRID/GET_TILE Cached tile accessor.
+            %
+            %   Usage (assuming map is a 1x1 GeoRasterGrid):
+            %
+            %       tile = map.get_tile(index)
+            %
+            %   Inputs:
+            %
+            %       index <1x1 numeric>
+            %           - the index of the tile to retrieve
+            %
+            %   Outputs:
+            %
+            %       tile <1x1 GeoRasterTile>
+            %           - the tile that contains the point
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
+
+            itile = this.index == idx;
+
+            if any(itile)
+                tile = this.tiles(itile);
+            else
+                tile = this.load_tile(idx);
+            end
+        end
+
         function tile = load_tile(this, index)
             %GEORASTERGRID/LOAD_TILE Load the tile at a given index.
             %
