@@ -179,91 +179,12 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             % performance optimization for uniformly-gridded data will improve the time it
             % takes to lookup the correct tile for each lat/lon from O(n_tiles) to O(1).
             % when tested on a dataset with 10k+ tiles, lookup speed was >700x faster
-            ok = precompute_grid_mapping(this);
+            ok = compute_dense_grid_mapping(this);
 
             if ~ok
                 warning('GeoRasterGrid:optimization_failed',...
                     'Raster grid edges are not aligned; performance optimizations disabled.');
             end
-        end
-
-        function is_optimized = precompute_grid_mapping(this)
-            is_optimized = false;
-
-            % check that all tiles are aligned to the same grid lines and that none overlap
-            checked = false(size(this.raster_files));
-            cy = mean(this.lat_extents,2);
-            y_intervals = [];
-
-            for i = 1:numel(this.raster_files)
-                if checked(i), continue; end
-
-                start_lat = this.lat_extents(i,1);
-                end_lat = this.lat_extents(i,2);
-                
-                % find all tiles that have a center point inside this interval
-                icheck = cy >= start_lat & cy <= end_lat;
-                grid_start = uniquetol(this.lat_extents(icheck,1), 1e-12);
-                grid_end = uniquetol(this.lat_extents(icheck,2), 1e-12);
-
-                if numel(grid_start) > 1 || numel(grid_end) > 1
-                    % grids are not aligned; abort
-                    return
-                else
-                    % don't check these tiles again
-                    checked(icheck) = true;
-                    y_intervals = vertcat(y_intervals, [grid_start grid_end]);
-                end
-            end
-
-            checked = false(size(this.raster_files));
-            cx = mean(this.lon_extents,2);
-            x_intervals = [];
-
-            for i = 1:numel(this.raster_files)
-                if checked(i), continue; end
-                
-                start_lon = this.lon_extents(i,1);
-                end_lon = this.lon_extents(i,2);
-                
-                % find all tiles that have a center point inside this interval
-                icheck = cx >= start_lon & cx <= end_lon;
-                grid_start = uniquetol(this.lon_extents(icheck,1), 1e-12);
-                grid_end = uniquetol(this.lon_extents(icheck,2), 1e-12);
-
-                if numel(grid_start) > 1 || numel(grid_end) > 1
-                    % grids are not aligned; abort
-                    return
-                else
-                    % don't check these tiles again
-                    checked(icheck) = true;
-                    x_intervals = vertcat(x_intervals, [grid_start grid_end]);
-                end
-            end
-
-            % OK, tiles are aligned to the same grid--we can optimize this! start
-            % by sorting the intervals
-            x_intervals = sortrows(x_intervals);
-            y_intervals = sortrows(y_intervals);
-
-            % check that intervals never overlap
-            if any(x_intervals(2:end,1) - x_intervals(1:end-1,2) < 0)
-                return
-            end
-            if any(y_intervals(2:end,1) - y_intervals(1:end-1,2) < 0)
-                return
-            end
-
-            % define a dense grid and map indices from the dense grid to the sparse grid
-            center_lon = mean(x_intervals,2);
-            center_lat = mean(y_intervals,2);
-            [center_lat, center_lon] = ndgrid(center_lat, center_lon);
-
-            this.grid_idx_map = latlon2tileindex(this, center_lat, center_lon);
-            this.lon_intervals = x_intervals;
-            this.lat_intervals = y_intervals;
-
-            is_optimized = true;
         end
     end
 
@@ -539,6 +460,122 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 index = nan(size(lat));
                 index(j) = i;
             end
+        end
+
+        function is_optimized = compute_dense_grid_mapping(this)
+            %GEORASTERGRID/COMPUTE_DENSE_GRID_MAPPING Enable performance optimization.
+            %
+            %   Usage:
+            %
+            %       is_optimized = obj.COMPUTE_DENSE_GRID_MAPPING()
+            %
+            %   Inputs:
+            %
+            %       none
+            %
+            %   Outputs:
+            %
+            %       is_optimized <1x1 logical>
+            %           - true if the optimization was successful
+            %
+            %   Description:
+            %
+            %       This method converts a sparsely-connected grid of tiles into
+            %       a dense grid so that tile lookups can occur in O(1) time (as
+            %       opposed to having to check the bounds of every tile--O(n_tiles)).
+            %       However, it can only be done if the gridded tiles are all aligned
+            %       to lines of longitude & latitude.  In other words, if you were to
+            %       extend each of the 4 lines that make up the sides of any tile to
+            %       +Inf and -Inf, those lines should only be coincident with the EDGES 
+            %       of other tiles.  The sides of any tile (when extended to infinity)
+            %       can NEVER intersect the body of any other tile, else this optimization
+            %       will be automatically disabled and the method will return false.
+            %
+            %       One way of thinking about this method is that it is "filling in the gaps"
+            %       for a set of tiles.  For example, the tiles may form some irregular
+            %       shape as they trace out land mass and have gaps over the oceans.  But to
+            %       calculate an index directly, the shape must be a dense matrix.  This method
+            %       creates "ghost" tiles to fill in the rectangle that encloses the sparse
+            %       set of real tiles.  Tile index lookups happen against this dense grid in
+            %       constant time, and the values of the dense grid map back to indices in
+            %       the sparse grid to be used directly with obj.load_tile().
+
+            is_optimized = false;
+
+            % check that all tiles are aligned to the same grid lines
+            checked = false(size(this.raster_files));
+            cy = mean(this.lat_extents,2);
+            y_intervals = [];
+
+            for i = 1:numel(this.raster_files)
+                if checked(i), continue; end
+
+                start_lat = this.lat_extents(i,1);
+                end_lat = this.lat_extents(i,2);
+                
+                % find all tiles that have a center point inside this interval
+                icheck = cy >= start_lat & cy <= end_lat;
+                grid_start = uniquetol(this.lat_extents(icheck,1), 1e-12);
+                grid_end = uniquetol(this.lat_extents(icheck,2), 1e-12);
+
+                if numel(grid_start) > 1 || numel(grid_end) > 1
+                    % grids are not aligned; abort
+                    return
+                else
+                    % don't check these tiles again
+                    checked(icheck) = true;
+                    y_intervals = vertcat(y_intervals, [grid_start grid_end]);
+                end
+            end
+
+            checked = false(size(this.raster_files));
+            cx = mean(this.lon_extents,2);
+            x_intervals = [];
+
+            for i = 1:numel(this.raster_files)
+                if checked(i), continue; end
+                
+                start_lon = this.lon_extents(i,1);
+                end_lon = this.lon_extents(i,2);
+                
+                % find all tiles that have a center point inside this interval
+                icheck = cx >= start_lon & cx <= end_lon;
+                grid_start = uniquetol(this.lon_extents(icheck,1), 1e-12);
+                grid_end = uniquetol(this.lon_extents(icheck,2), 1e-12);
+
+                if numel(grid_start) > 1 || numel(grid_end) > 1
+                    % grids are not aligned; abort
+                    return
+                else
+                    % don't check these tiles again
+                    checked(icheck) = true;
+                    x_intervals = vertcat(x_intervals, [grid_start grid_end]);
+                end
+            end
+
+            % OK, tiles are aligned to the same grid--we can optimize this! start
+            % by sorting the intervals
+            x_intervals = sortrows(x_intervals);
+            y_intervals = sortrows(y_intervals);
+
+            % check that intervals never overlap
+            if any(x_intervals(2:end,1) - x_intervals(1:end-1,2) < 0)
+                return
+            end
+            if any(y_intervals(2:end,1) - y_intervals(1:end-1,2) < 0)
+                return
+            end
+
+            % define a dense grid and map indices from the dense grid to the sparse grid
+            center_lon = mean(x_intervals,2);
+            center_lat = mean(y_intervals,2);
+            [center_lat, center_lon] = ndgrid(center_lat, center_lon);
+
+            this.grid_idx_map = latlon2tileindex(this, center_lat, center_lon);
+            this.lon_intervals = x_intervals;
+            this.lat_intervals = y_intervals;
+
+            is_optimized = true;
         end
     end
 
