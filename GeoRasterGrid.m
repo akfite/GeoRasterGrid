@@ -215,7 +215,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %
             %   Outputs:
             %
-            %       value <Nx1xC double>
+            %       value <Nx1xC single or double>
             %           - the raster value at each lat/lon point
             %           - 3rd dimension reserved for multi-channel raster values
             %             (i.e. an RGB raster will return Nx1x3)
@@ -257,9 +257,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 n_cached = sum(icached);
             end
 
-            % pre-allocate output
-            value = nan(size(idx));
-
             % process in batches, tile-by-tile (starting with those already in memory)
             for i = 1:numel(unique_tiles)
                 tile_idx = unique_tiles(i); % index of tile to load
@@ -275,6 +272,11 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
                 % GeoRasterTile object manages value lookup
                 raster_values = tile.get(lat(iout), lon(iout));
+
+                if i == 1
+                    % pre-allocate output now that type is known
+                    value = nan(size(idx),'like',raster_values);
+                end
                 
                 % if the raster is multi-channel, we need to adjust our pre-allocated array
                 if size(raster_values,3) ~= size(value,3)
@@ -287,39 +289,68 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             value = reshape(value, [orig_sz size(value,3)]);
         end
 
-        function [value, lat, lon] = roi(this, lat_lim, lon_lim, sz)
+        function [value, lat, lon] = roi(this, lat_lim, lon_lim, res)
+            %GEORASTERGRID/ROI Get the values in a rectangular Region Of Interest (ROI).
+            %
+            %   Usage (assuming map is a 1x1 GeoRasterGrid):
+            %
+            %       [value, lat, lon] = map.roi(lat_lim, lon_lim)
+            %       [value, lat, lon] = map.roi(lat_lim, lon_lim, res)
+            %
+            %   Inputs:
+            %
+            %       lat_lim, lon_lim <1x2 double>
+            %           - the min & max values of the rectangular region to sample
+            %           - degrees
+            %
+            %       res (=1024) <1x1 double>
+            %           - the number of sample points to get along the longer side of 
+            %             the ROI rectangle.  the shorter side will be adjusted to
+            %             keep the sampling aspect ratio square
+            %
+            %   Outputs:
+            %
+            %       value <NxMxC single or double>
+            %           - the raster value at each lat/lon point
+            %           - 3rd dimension reserved for multi-channel raster values
+            %             (i.e. an RGB raster will return NxMx3)
+            %
+            %       lat, lon <1xN and 1xM double>
+            %           - the latitude & longitude vectors on which the ROI was sampled
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
             if nargin < 4
-                sz = [1000 1000];
+                res = 1024;
             end
 
-            if isscalar(sz)
-                sz = [sz sz];
+            dy = abs(diff(lat_lim));
+            dx = abs(diff(lon_lim));
+
+            if dy/dx <= 1
+                % shorter in latitude
+                res = round([res*(dy/dx) res]);
+            else
+                % shorter in longitude
+                res = round([res res*(dx/dy)]);
             end
 
-            lat = linspace(lat_lim(1), lat_lim(2), sz(1));
-            lon = linspace(lon_lim(1), lon_lim(2), sz(2));
+            lat = linspace(lat_lim(1), lat_lim(2), res(1));
+            lon = linspace(lon_lim(1), lon_lim(2), res(2));
 
             % first try a shortcut: if diagonal corners are in the same tile, it
             % follows that every other point is in the same tile
             corner_tile = this.latlon2tileindex(lat_lim(:), lon_lim(:));
 
-            if all(isnan(corner_tile))
-                % everything is out of bounds
-                value = nan(sz, 'single');
-                return
+            [lat_grid, lon_grid] = ndgrid(lat, lon);
+            
+            if all(corner_tile == corner_tile(1))
+                % all data is in the same tile; use slightly faster access path
+                value = this.get(lat_grid, lon_grid, corner_tile(1));
             else
-                [lat_grid, lon_grid] = ndgrid(lat, lon);
-                
-                if all(corner_tile == corner_tile(1))
-                    % all data is in the same tile
-                    value = this.get(lat_grid, lon_grid, corner_tile(1));
-                else
-                    % data spans multiple tiles
-                    value = this.get(lat_grid, lon_grid);
-                end
+                % data spans multiple tiles
+                value = this.get(lat_grid, lon_grid);
             end
-
         end
         
         function ax = show(this, ax)

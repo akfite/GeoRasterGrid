@@ -102,8 +102,6 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             latgrid = linspace(min(lat_extents)+dy/2, max(lat_extents)-dy/2, size(img,1));
 
             % TODO: assume standard image coords, but use info from R if possible
-%             img = flipud(img);
-
             [latgrid, longrid] = ndgrid(latgrid, longrid);
 
             this.interpolant = griddedInterpolant(latgrid, longrid, single(img), this.interp);
@@ -154,12 +152,12 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             %
             %   Usage:
             %
-            %       [values, lat, lon] = obj.roi(lat_bounds, lon_bounds)
-            %       [values, lat, lon] = obj.roi(lat_bounds, lon_bounds, res)
+            %       [values, lat, lon] = obj.roi(lat_lim, lon_lim)
+            %       [values, lat, lon] = obj.roi(lat_lim, lon_lim, res)
             %
             %   Inputs:
             %
-            %       lat_bounds, lon_bounds <1x2 double>
+            %       lat_lim, lon_lim <1x2 double>
             %           - the min & max values of the region's rectangle
             %           - degrees on [-180, 180]
             %
