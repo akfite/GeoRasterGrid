@@ -1,10 +1,10 @@
 classdef GeoRasterGrid < matlab.mixin.Copyable
-%GEORASTERGRID Manage gridded geospatial raster data.
+%GEORASTERGRID Fast access to tiled geospatial data
 %
 %   obj = GEORASTERGRID(___) manages a tiled dataset of geospatial information
-%   from multiple georaster files.  It provides optimized access to raster values and
-%   can scale up to datasets too large to fit in memory.  It is primarily intended to
-%   be used with sets of GeoTIFF, .dt0/1/2, or other georaster data files.
+%   such as a collection of GeoTIFF images.  It provides O(1) tile lookup, a
+%   data cache to reuse recently-accessed data, and the ability to operate without
+%   any toolbox licenses.
 %
 %   Methods:
 %
@@ -43,14 +43,13 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
         ax
 
         % metadata to enable performance optimization
-        lat_intervals(:,2) double
-        lon_intervals(:,2) double
-        grid_idx_map(:,:) double
+        lat_intervals(:,2) double % lower & upper bound of each unique interval
+        lon_intervals(:,2) double % lower & upper bound of each unique interval
+        grid_idx_map(:,:) double % each element is an index into obj.raster_files
     end
 
     properties (Constant, Hidden)
-        % list of supported file extensions
-        supported_filetypes = [
+        georaster_filetypes = [
             ".tif",".tiff",".adf",".asc",".grd",".flt",".dt0",".dt1",".dt2",...
             ".ddf",".dem",".ers",".dat",".img",".grc",".hgt"
             ]';
@@ -135,7 +134,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 found_files = string(fullfile({found_files.folder}, {found_files.name})');
 
                 [~,~,ext] = fileparts(found_files);
-                isgeoraster = contains(ext, this.supported_filetypes, 'ignorecase', true);
+                isgeoraster = contains(ext, this.georaster_filetypes, 'ignorecase', true);
 
                 if any(isgeoraster)
                     % found expected file type; add to list
@@ -241,15 +240,22 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
             idx = idx(:);
 
-            % get index to all tiles we'll need to access
-            unique_tiles = unique(idx);
-            unique_tiles = unique_tiles(~isnan(unique_tiles));
-
-            % process cached (already-loaded) tiles first by
-            % putting the cached indices at the front of the array
-            icached = ismember(unique_tiles, this.index);
-            unique_tiles = [unique_tiles(icached); unique_tiles(~icached)];
-            n_cached = sum(icached);
+            if isscalar(idx)
+                % fastest code path when index is provided to us
+                unique_tiles = idx;
+                n_cached = sum(this.index == idx);
+                idx = repmat(idx, size(lat));
+            else
+                % get index to all tiles we'll need to access
+                unique_tiles = unique(idx);
+                unique_tiles = unique_tiles(~isnan(unique_tiles));
+    
+                % process cached (already-loaded) tiles first by
+                % putting the cached indices at the front of the array
+                icached = ismember(unique_tiles, this.index);
+                unique_tiles = [unique_tiles(icached); unique_tiles(~icached)];
+                n_cached = sum(icached);
+            end
 
             % pre-allocate output
             value = nan(size(idx));
@@ -281,11 +287,38 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             value = reshape(value, [orig_sz size(value,3)]);
         end
 
-        function [value, lat, lon] = roi(this, lat_lim, lon_lim)
+        function [value, lat, lon] = roi(this, lat_lim, lon_lim, sz)
+
+            if nargin < 4
+                sz = [1000 1000];
+            end
+
+            if isscalar(sz)
+                sz = [sz sz];
+            end
+
+            lat = linspace(lat_lim(1), lat_lim(2), sz(1));
+            lon = linspace(lon_lim(1), lon_lim(2), sz(2));
 
             % first try a shortcut: if diagonal corners are in the same tile, it
             % follows that every other point is in the same tile
             corner_tile = this.latlon2tileindex(lat_lim(:), lon_lim(:));
+
+            if all(isnan(corner_tile))
+                % everything is out of bounds
+                value = nan(sz, 'single');
+                return
+            else
+                [lat_grid, lon_grid] = ndgrid(lat, lon);
+                
+                if all(corner_tile == corner_tile(1))
+                    % all data is in the same tile
+                    value = this.get(lat_grid, lon_grid, corner_tile(1));
+                else
+                    % data spans multiple tiles
+                    value = this.get(lat_grid, lon_grid);
+                end
+            end
 
         end
         
@@ -503,14 +536,14 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %
             %   Description:
             %
-            %       This method converts a sparsely-connected grid of tiles into
+            %       This method represents a sparsely-connected grid of tiles as
             %       a dense grid so that tile lookups can occur in O(1) time (as
             %       opposed to having to check the bounds of every tile--O(n_tiles)).
             %       However, it can only be done if the gridded tiles are all aligned
             %       to lines of longitude & latitude.  In other words, if you were to
             %       extend each of the 4 lines that make up the sides of any tile to
             %       +Inf and -Inf, those lines should only be coincident with the EDGES 
-            %       of other tiles.  The sides of any tile (when extended to infinity)
+            %       of other tiles.  The edges of any tile (when extended to infinity)
             %       can NEVER intersect the body of any other tile, else this optimization
             %       will be automatically disabled and the method will return false.
             %
