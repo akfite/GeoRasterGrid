@@ -334,23 +334,58 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
             if res == -1 % sample at native resolution
                 % first step is to figure out which tiles are involved
-                dx = min(abs(diff(lat_lim)), min(diff(this.lon_extents,[],2)));
-                dy = min(abs(diff(lon_lim)), min(diff(this.lat_extents,[],2)));
+                dx = min(abs(diff(lon_lim)), min(diff(this.lon_extents,[],2)));
+                dy = min(abs(diff(lat_lim)), min(diff(this.lat_extents,[],2)));
 
                 lat_grid = lat_lim(1):(dy/3):lat_lim(2);
                 lon_grid = lon_lim(1):(dx/3):lon_lim(2);
                 [lat_grid,lon_grid] = ndgrid(lat_grid, lon_grid);
                 idx = this.latlon2tileindex(lat_grid, lon_grid);
                 unique_tiles = unique(idx(:));
+                
+                assert(any(~isnan(unique_tiles)), 'GeoRasterGrid:invalid_roi', ...
+                    'Failed to find any valid data in the region of interest.');
 
-                for i = 1:numel(unique_tiles)
-                    tile = this.get_tile(unique_tiles(i));
+                % load first tile to kick things off (we'll assume other tiles have same
+                % post spacings)
+                tile = this.get_tile(unique_tiles(1));
 
-                    if i == 1
-                        % first-time setup: figure out problem size, pre-allocate, etc
+                % initialize lat/lon to the tile grid points
+                lat = tile.lat;
+                lon = tile.lon;
 
-                    end
+                % expand to meet lat/lon limits (while staying on native grid points!)
+                dy = abs(diff(tile.lat(1:2)));
+                dx = abs(diff(tile.lon(1:2)));
+
+                if lat_lim(1) < lat(1)
+                    lat = [(lat(1)-dy):-dy:lat_lim(1), lat];
                 end
+                if lat_lim(2) > lat(end)
+                    lat = [lat, lat(end)+dy:dy:lat_lim(2)];
+                end
+                if lon_lim(1) < lon(1)
+                    lon = [(lat(1)-dx):-dx:lon_lim(1), lon];
+                end
+                if lon_lim(2) > lon(end)
+                    lon = [lon, lon(end)+dx:dx:lon_lim(2)];
+                end
+
+                % trim
+                lat = lat(lat >= lat_lim(1) & lat <= lat_lim(2));
+                lon = lon(lon >= lon_lim(1) & lon <= lon_lim(2));
+
+                % sanity check memory usage...
+                mem_usage = numel(lat)*numel(lon)*size(tile.raster,3)*4/1e9;
+
+                if mem_usage > 16
+                    warning('GeoRasterGrid:high_memory_usage',...
+                        'Creating a %d x %d (%.1f GB) matrix; keep an eye on your RAM...', ...
+                        numel(lat), numel(lon), mem_usage);
+                end
+
+                [lat_grid, lon_grid] = ndgrid(lat, lon);
+                value = this.get(lat_grid, lon_grid);
             else
                 % sample at custom resolution (interpolate)
                 validateattributes(res, {'numeric'},{'scalar','positive','real'});
