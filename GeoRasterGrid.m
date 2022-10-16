@@ -307,6 +307,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %           - the number of sample points to get along the longer side of 
             %             the ROI rectangle.  the shorter side will be adjusted to
             %             keep the sampling aspect ratio square
+            %           - if you wish to sample at the native resolution of the dataset,
+            %             you may set RES to -1.  HOWEVER, it is very easy to run out of
+            %             memory if you request a large area or your rasters are at very
+            %             high resolution, so please be cautious and know what you're doing!
             %
             %   Outputs:
             %
@@ -324,32 +328,77 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 res = 1024;
             end
 
-            dy = abs(diff(lat_lim));
-            dx = abs(diff(lon_lim));
-
-            if dy/dx <= 1
-                % shorter in latitude
-                res = round([res*(dy/dx) res]);
+            if res == -1 % sample the tiles directly (at native resolution)
+                
             else
-                % shorter in longitude
-                res = round([res res*(dx/dy)]);
+                % sample at custom resolution (interpolate)
+                validateattributes(res, {'numeric'},{'scalar','positive','real'});
+
+                height = abs(diff(lat_lim));
+                width = abs(diff(lon_lim));
+    
+                if height/width <= 1
+                    % shorter in latitude
+                    res = round([res*(height/width) res]);
+                else
+                    % shorter in longitude
+                    res = round([res res*(width/height)]);
+                end
+    
+                lat = linspace(lat_lim(1), lat_lim(2), res(1));
+                lon = linspace(lon_lim(1), lon_lim(2), res(2));
+    
+                % first try a shortcut: if diagonal corners are in the same tile, it
+                % follows that every other point is in the same tile
+                corner_tile = this.latlon2tileindex(lat_lim(:), lon_lim(:));
+    
+                [lat_grid, lon_grid] = ndgrid(lat, lon);
+                
+                if all(corner_tile == corner_tile(1))
+                    % all data is in the same tile; use slightly faster access path
+                    value = this.get(lat_grid, lon_grid, corner_tile(1));
+                else
+                    % data spans multiple tiles
+                    value = this.get(lat_grid, lon_grid);
+                end
             end
+        end
 
-            lat = linspace(lat_lim(1), lat_lim(2), res(1));
-            lon = linspace(lon_lim(1), lon_lim(2), res(2));
+        function tile = get_tile(this, lat, lon)
+            %GEORASTERGRID/GET_TILE Access the tile that contains a lat/lon point.
+            %
+            %   Usage (assuming map is a 1x1 GeoRasterGrid):
+            %
+            %       tile = map.get_tile(lat, lon)
+            %
+            %   Inputs:
+            %
+            %       lat, lon <1x1 numeric>
+            %           - a latitude & longitude point
+            %           - degrees
+            %
+            %   Outputs:
+            %
+            %       tile <1x1 GeoRasterTile>
+            %           - the tile that contains the point
+            %           - if no tile contains the point, will be empty
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
-            % first try a shortcut: if diagonal corners are in the same tile, it
-            % follows that every other point is in the same tile
-            corner_tile = this.latlon2tileindex(lat_lim(:), lon_lim(:));
+            validateattributes(lat,{'numeric'},{'scalar','real'});
+            validateattributes(lon,{'numeric'},{'scalar','real'});
 
-            [lat_grid, lon_grid] = ndgrid(lat, lon);
-            
-            if all(corner_tile == corner_tile(1))
-                % all data is in the same tile; use slightly faster access path
-                value = this.get(lat_grid, lon_grid, corner_tile(1));
+            idx = this.latlon2tileindex(lat, lon);
+            itile = this.index == idx;
+
+            if any(itile)
+                tile = this.tiles(itile);
             else
-                % data spans multiple tiles
-                value = this.get(lat_grid, lon_grid);
+                if ~isnan(idx)
+                    tile = this.load_tile(idx);
+                else
+                    tile = GeoRasterTile.empty;
+                end
             end
         end
         
