@@ -449,6 +449,26 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
     %% Private helper methods
     methods (Access = private)
         function tile = load_tile(this, index)
+            %GEORASTERGRID/LOAD_TILE Load the tile at a given index.
+            %
+            %   Usage:
+            %
+            %       tile = obj.LOAD_TILE(index)
+            %
+            %   Inputs:
+            %
+            %       index <1x1 double>
+            %           - the index to the tile to load
+            %           - must be valid on 1:numel(obj.raster_files)
+            %
+            %   Outputs:
+            %
+            %       tile <1x1 GeoRasterTile>
+            %           - the map tile that was loaded
+            %           - this tile will also be inserted into obj.tiles
+            %           - if obj.capacity has been reached, this method will remove
+            %             obj.tiles(1) to make room for the new tile
+
             tile = GeoRasterTile(...
                 this.raster_files{index}, ...
                 this.lat_extents(index,:), ...
