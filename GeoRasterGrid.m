@@ -445,8 +445,23 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 % O(1) solution
                 ix = findinterval(this.lon_intervals(:,1), this.lon_intervals(:,2), lon);
                 iy = findinterval(this.lat_intervals(:,1), this.lat_intervals(:,2), lat);
-                imap = sub2ind(size(this.grid_idx_map), iy, ix);
-                index = this.grid_idx_map(imap);
+
+                try
+                    % this is faster 99% of the time (when values are all in range)
+                    imap = sub2ind(size(this.grid_idx_map), iy, ix);
+                    index = this.grid_idx_map(imap);
+                catch me
+                    % some values are likely outside the valid map area... need to do
+                    % a little bit of extra processing to remove them (but this adds up
+                    % so it's nice to avoid it most of the time!)
+                    if contains(me.identifier, 'IndexOutOfRange')
+                        index = nan(size(lat));
+                        valid = iy > 0 & ix > 0;
+                        index(valid) = sub2ind(size(this.grid_idx_map), iy(valid), ix(valid));
+                    else
+                        rethrow(me);
+                    end
+                end
             end
 
             function index = local_bruteforce_lookup(lat, lon)

@@ -12,7 +12,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
     end
     
     properties (Dependent)
-        raster double
+        raster(:,:,:)
         lat(1,:) double
         lon(1,:) double
     end
@@ -106,7 +106,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
 
             [latgrid, longrid] = ndgrid(latgrid, longrid);
 
-            this.interpolant = griddedInterpolant(latgrid, longrid, double(img), this.interp);
+            this.interpolant = griddedInterpolant(latgrid, longrid, single(img), this.interp);
             this.file = raster_file;
         end
     end
