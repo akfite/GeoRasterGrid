@@ -624,7 +624,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                     if contains(me.identifier, 'IndexOutOfRange')
                         index = nan(size(lat));
                         valid = iy > 0 & ix > 0;
-                        index(valid) = sub2ind(size(this.grid_idx_map), iy(valid), ix(valid));
+                        imap = sub2ind(size(this.grid_idx_map), iy(valid), ix(valid));
+                        index(valid) = this.grid_idx_map(imap);
                     else
                         rethrow(me);
                     end
