@@ -247,8 +247,14 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 idx = repmat(idx, size(lat));
             else
                 % get index to all tiles we'll need to access
-                unique_tiles = unique(idx);
-                unique_tiles = unique_tiles(~isnan(unique_tiles));
+                if numel(this.raster_files) < 255
+                    % ~2x faster (process as uint8 for unique())
+                    unique_tiles = unique(uint8(idx));
+                    unique_tiles = unique_tiles(unique_tiles > 0);
+                else
+                    unique_tiles = unique(idx);
+                    unique_tiles = unique_tiles(~isnan(unique_tiles));
+                end
     
                 % process cached (already-loaded) tiles first by
                 % putting the cached indices at the front of the array
