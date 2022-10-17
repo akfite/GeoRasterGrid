@@ -62,6 +62,10 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             if ischar(raster_file) || isstring(raster_file)
                 try
                     [img,R] = readgeoraster(raster_file);
+
+                    if strcmp(R.ColumnsStartFrom,'north')
+                        img = flipud(img);
+                    end
                 catch
                     assert(nargin > 1, ...
                         ['File must be readable by readgeoraster() when not ' ...
