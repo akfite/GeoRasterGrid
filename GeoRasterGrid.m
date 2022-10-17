@@ -239,6 +239,15 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             end
 
             idx = idx(:);
+            
+            % prefer to work with reduced-precision integers for speed
+            if numel(this.raster_files) < intmax('uint8')
+                idx = uint8(idx);
+            elseif numel(this.raster_files) < intmax('uint16')
+                idx = uint16(idx);
+            else
+                % leave as double
+            end
 
             if isscalar(idx)
                 % fastest code path when index is provided to us
@@ -247,12 +256,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 idx = repmat(idx, size(lat));
             else
                 % get index to all tiles we'll need to access
-                if numel(this.raster_files) < 255
-                    % ~2x faster (process as uint8 for unique())
-                    unique_tiles = unique(uint8(idx));
+                unique_tiles = unique(idx);
+                if isinteger(idx)
                     unique_tiles = unique_tiles(unique_tiles > 0);
                 else
-                    unique_tiles = unique(idx);
                     unique_tiles = unique_tiles(~isnan(unique_tiles));
                 end
     
@@ -391,7 +398,12 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 end
 
                 [lat_grid, lon_grid] = ndgrid(lat, lon);
-                value = this.get(lat_grid, lon_grid);
+
+                if numel(unique_tiles) == 1
+                    value = this.get(lat_grid, lon_grid, unique_tiles);
+                else
+                    value = this.get(lat_grid, lon_grid);
+                end
             else
                 % sample at custom resolution (interpolate)
                 validateattributes(res, {'numeric'},{'scalar','positive','real'});
