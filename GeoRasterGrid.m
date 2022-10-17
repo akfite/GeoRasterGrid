@@ -359,13 +359,13 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 dx = abs(diff(tile.lon(1:2)));
 
                 if lat_lim(1) < lat(1)
-                    lat = [(lat(1)-dy):-dy:lat_lim(1), lat];
+                    lat = [lat_lim(1):dy:(lat(1)-dy), lat];
                 end
                 if lat_lim(2) > lat(end)
                     lat = [lat, lat(end)+dy:dy:lat_lim(2)];
                 end
                 if lon_lim(1) < lon(1)
-                    lon = [(lat(1)-dx):-dx:lon_lim(1), lon];
+                    lon = [lon_lim(1):dx:(lat(1)-dx), lon];
                 end
                 if lon_lim(2) > lon(end)
                     lon = [lon, lon(end)+dx:dx:lon_lim(2)];
@@ -378,7 +378,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 % sanity check memory usage...
                 mem_usage = numel(lat)*numel(lon)*size(tile.raster,3)*4/1e9;
 
-                if mem_usage > 16
+                if mem_usage > 8
                     warning('GeoRasterGrid:high_memory_usage',...
                         'Creating a %d x %d (%.1f GB) matrix; keep an eye on your RAM...', ...
                         numel(lat), numel(lon), mem_usage);
