@@ -249,8 +249,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 % leave as double
             end
 
-            if isscalar(idx)
-                % fastest code path when index is provided to us
+            OPTIMIZE_FOR_SINGLE_TILE_ACCESS = isscalar(idx) && idx > 0;
+
+            if OPTIMIZE_FOR_SINGLE_TILE_ACCESS
+                % fastest code path (used particularly by method roi())
                 unique_tiles = idx;
                 n_cached = sum(this.index == idx);
                 idx = repmat(idx, size(lat));
@@ -273,7 +275,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             % process in batches, tile-by-tile (starting with those already in memory)
             for i = 1:numel(unique_tiles)
                 tile_idx = unique_tiles(i); % index of tile to load
-                iout = find(idx == tile_idx); % index into output array
 
                 if i <= n_cached
                     % tile is already in memory
@@ -283,20 +284,24 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                     tile = this.load_tile(tile_idx);
                 end
 
-                % GeoRasterTile object manages value lookup
-                raster_values = tile.get(lat(iout), lon(iout));
+                if OPTIMIZE_FOR_SINGLE_TILE_ACCESS
+                    value = tile.get(lat, lon);
+                else
+                    iout = find(idx == tile_idx); % index into output array
+                    raster_values = tile.get(lat(iout), lon(iout));
 
-                if i == 1
-                    % pre-allocate output now that type is known
-                    value = nan(size(idx),'like',raster_values);
-                end
+                    if i == 1
+                        % pre-allocate output now that type is known
+                        value = nan(size(idx),'like',raster_values);
+                    end
                 
-                % if the raster is multi-channel, we need to adjust our pre-allocated array
-                if size(raster_values,3) ~= size(value,3)
-                    value = repmat(value, [1 1 size(raster_values,3)]);
-                end
+                    % if the raster is multi-channel, we need to adjust our pre-allocated array
+                    if size(raster_values,3) ~= size(value,3)
+                        value = repmat(value, [1 1 size(raster_values,3)]);
+                    end
 
-                value(iout,1,:) = raster_values;
+                    value(iout,1,:) = raster_values;
+                end
             end
 
             value = reshape(value, [orig_sz size(value,3)]);
@@ -399,7 +404,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
                 [lat_grid, lon_grid] = ndgrid(lat, lon);
 
-                if numel(unique_tiles) == 1
+                if all(unique_tiles == unique_tiles(1))
                     value = this.get(lat_grid, lon_grid, unique_tiles);
                 else
                     value = this.get(lat_grid, lon_grid);
@@ -716,16 +721,29 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 
                 % find all tiles that have a center point inside this interval
                 icheck = cy >= start_lat & cy <= end_lat;
-                grid_start = uniquetol(this.lat_extents(icheck,1), 1e-12);
-                grid_end = uniquetol(this.lat_extents(icheck,2), 1e-12);
+                grid_start = this.lat_extents(icheck,1);
+                grid_end = this.lat_extents(icheck,2);
 
-                if numel(grid_start) > 1 || numel(grid_end) > 1
+                grid_start_u = uniquetol(grid_start, 1e-7); % allow ~1cm slack
+                grid_end_u = uniquetol(grid_end, 1e-7);
+
+                if numel(grid_start_u) > 1 || numel(grid_end_u) > 1
                     % grids are not aligned; abort
                     return
                 else
+                    % they really need to be aligned to machine precision... if
+                    % that's not the case we'll force it to be true.
+                    tol = eps(max(this.lat_extents(:)));
+                    if any(abs(grid_start - grid_start(1)) > tol)
+                        grid_start(:) = mean(grid_start);
+                    end
+                    if any(abs(grid_end - grid_end(1)) > tol)
+                        grid_end(:) = mean(grid_end);
+                    end
+
                     % don't check these tiles again
                     checked(icheck) = true;
-                    y_intervals = vertcat(y_intervals, [grid_start grid_end]);
+                    y_intervals = vertcat(y_intervals, [grid_start(1) grid_end(1)]);
                 end
             end
 
@@ -735,22 +753,35 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
             for i = 1:numel(this.raster_files)
                 if checked(i), continue; end
-                
+
                 start_lon = this.lon_extents(i,1);
                 end_lon = this.lon_extents(i,2);
                 
                 % find all tiles that have a center point inside this interval
                 icheck = cx >= start_lon & cx <= end_lon;
-                grid_start = uniquetol(this.lon_extents(icheck,1), 1e-12);
-                grid_end = uniquetol(this.lon_extents(icheck,2), 1e-12);
+                grid_start = this.lon_extents(icheck,1);
+                grid_end = this.lon_extents(icheck,2);
 
-                if numel(grid_start) > 1 || numel(grid_end) > 1
+                grid_start_u = uniquetol(grid_start, 1e-7); % allow ~1cm slack
+                grid_end_u = uniquetol(grid_end, 1e-7);
+
+                if numel(grid_start_u) > 1 || numel(grid_end_u) > 1
                     % grids are not aligned; abort
                     return
                 else
+                    % they really need to be aligned to machine precision... if
+                    % that's not the case we'll force it to be true.
+                    tol = eps(max(this.lon_extents(:)));
+                    if any(abs(grid_start - grid_start(1)) > tol)
+                        grid_start(:) = mean(grid_start);
+                    end
+                    if any(abs(grid_end - grid_end(1)) > tol)
+                        grid_end(:) = mean(grid_end);
+                    end
+
                     % don't check these tiles again
                     checked(icheck) = true;
-                    x_intervals = vertcat(x_intervals, [grid_start grid_end]);
+                    x_intervals = vertcat(x_intervals, [grid_start(1) grid_end(1)]);
                 end
             end
 
@@ -758,14 +789,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             % by sorting the intervals
             x_intervals = sortrows(x_intervals);
             y_intervals = sortrows(y_intervals);
-
-            % check that intervals never overlap
-            if any(x_intervals(2:end,1) - x_intervals(1:end-1,2) < 0)
-                return
-            end
-            if any(y_intervals(2:end,1) - y_intervals(1:end-1,2) < 0)
-                return
-            end
 
             % define a dense grid and map indices from the dense grid to the sparse grid
             center_lon = mean(x_intervals,2);
