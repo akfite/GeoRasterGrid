@@ -174,6 +174,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             this.raster_files = raster_files;
             this.lat_extents = vertcat(lat_lim{:});
             this.lon_extents = vertcat(lon_lim{:});
+            this.capacity = min(this.capacity, numel(raster_files));
 
             % performance optimization for uniformly-gridded data will improve the time it
             % takes to lookup the correct tile for each lat/lon from O(n_tiles) to O(1).
@@ -212,6 +213,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %           - this is the index into the tile that each lat/lon pair
             %             will be sourced from (in case the caller can more
             %             efficiently calculate it)
+            %           - if you get this wrong, it will completely invalidate
+            %             the result!  only use this if you are 100% sure 
             %
             %   Outputs:
             %
