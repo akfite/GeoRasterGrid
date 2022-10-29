@@ -21,8 +21,12 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 %   Contact:    akfite@gmail.com
 %   Date:       10-2022
 
+    properties (Dependent)
+        grid_optimized(1,1) logical
+    end
+
     properties
-        capacity(1,1) uint16 = 36 % max number of tiles to store
+        capacity(1,1) uint16 = 16 % max number of tiles to store
     end
 
     properties (SetAccess = private)
@@ -177,11 +181,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             this.capacity = min(this.capacity, numel(raster_files));
 
             % performance optimization for uniformly-gridded data will improve the time it
-            % takes to lookup the correct tile for each lat/lon from O(n_tiles) to O(1).
-            % when tested on a dataset with 10k+ tiles, lookup speed was >700x faster
-            ok = compute_dense_grid_mapping(this);
-
-            if ~ok
+            % takes to lookup the correct tile for each lat/lon from O(n_tiles) to something
+            % between O(1) and O(sqrt(n_tiles)).  when tested on a dataset with 15k tiles, 
+            % lookup speed was >700x faster
+            if ~compute_dense_grid_mapping(this)
                 warning('GeoRasterGrid:optimization_failed',...
                     'Raster grid edges are not aligned; performance optimizations disabled.');
             end
@@ -445,6 +448,77 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 end
             end
         end
+
+        function idx = latlon2tileindex(this, lat, lon)
+            %GEORASTERGRID/LATLON2TILEINDEX Fast tile lookup for many lat-lon points.
+            %
+            %   Usage:
+            %
+            %       idx = obj.LATLON2TILEINDEX(lat, lon)
+            %
+            %   Inputs:
+            %
+            %       lat, lon <double matrix>
+            %           - geodetic latitude & longitude
+            %
+            %   Outputs:
+            %
+            %       idx <double matrix>
+            %           - the index to the tile that contains each lat-lon pair
+            %           - NaN if no tile contains a point
+            %           - matches the size of the input arrays
+            %
+            %   Notes:
+            %
+            %       This method attempts to use an optimized solution, but it requires that
+            %       the tiles are aligned to a uniform grid.  If the tiles are not aligned,
+            %       a brute-force O(n_tiles) method will be employed instead.
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
+
+            if this.grid_optimized
+                idx = local_optimized_lookup(lat, lon); return
+            else
+                idx = local_bruteforce_lookup(lat, lon); return
+            end
+
+            % LOCAL (NESTED) FUNCTION
+            function index = local_optimized_lookup(lat, lon)
+                % something like 300x-1000x faster
+                ix = findinterval(this.lon_intervals(:,1), this.lon_intervals(:,2), lon);
+                iy = findinterval(this.lat_intervals(:,1), this.lat_intervals(:,2), lat);
+
+                % we'll just assume all values are in range and if we error we'll go
+                % back and correct it.  this is way faster for like 99% of use-cases
+                try
+                    imap = sub2ind(size(this.grid_idx_map), iy, ix);
+                    index = this.grid_idx_map(imap);
+                catch mexcept
+                    if contains(mexcept.identifier, 'IndexOutOfRange')
+                        % some values were outside the valid map area...
+                        index = nan(size(lat));
+                        valid = iy > 0 & ix > 0;
+                        imap = sub2ind(size(this.grid_idx_map), iy(valid), ix(valid));
+                        index(valid) = this.grid_idx_map(imap);
+                    else
+                        rethrow(mexcept);
+                    end
+                end
+            end
+
+            % LOCAL (NESTED) FUNCTION
+            function index = local_bruteforce_lookup(lat, lon)
+                % O(n_tiles) solution
+                [i,j] = find(... "i" is the tile index, and "j" is the query index
+                    lat(:)' >= this.lat_extents(:,1) & lat(:)' <= this.lat_extents(:,2) ...
+                    & ...
+                    lon(:)' >= this.lon_extents(:,1) & lon(:)' < this.lon_extents(:,2));
+    
+                % allocate output & only fill out the entries that were found
+                index = nan(size(lat));
+                index(j) = i;
+            end
+        end
         
         function ax = show(this, ax)
             %GEORASTERGRID/SHOW Display the current state of the map.
@@ -603,80 +677,12 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             end
         end
 
-        function idx = latlon2tileindex(this, lat, lon)
-            %GEORASTERGRID/LATLON2TILEINDEX Fast tile lookup for many lat-lon points.
-            %
-            %   Usage:
-            %
-            %       idx = obj.LATLON2TILEINDEX(lat, lon)
-            %
-            %   Inputs:
-            %
-            %       lat, lon <double matrix>
-            %           - geodetic latitude & longitude
-            %
-            %   Outputs:
-            %
-            %       idx <double matrix>
-            %           - the index to the tile that contains each lat-lon pair
-            %           - NaN if no tile contains a point
-            %           - matches the size of the input arrays
-            %
-            %   Notes:
-            %
-            %       This method attempts to use an O(1) solution, but it requires that
-            %       the tiles are aligned to a uniform grid.  If the tiles are not aligned,
-            %       a brute-force O(n_tiles) method will be employed instead.
-
-            if ~isempty(this.grid_idx_map)
-                idx = local_optimized_lookup(lat, lon);
-            else
-                idx = local_bruteforce_lookup(lat, lon);
-            end
-
-            function index = local_optimized_lookup(lat, lon)
-                % O(1) solution
-                ix = findinterval(this.lon_intervals(:,1), this.lon_intervals(:,2), lon);
-                iy = findinterval(this.lat_intervals(:,1), this.lat_intervals(:,2), lat);
-
-                try
-                    % this is faster 99% of the time (when values are all in range)
-                    imap = sub2ind(size(this.grid_idx_map), iy, ix);
-                    index = this.grid_idx_map(imap);
-                catch me
-                    % some values are likely outside the valid map area... need to do
-                    % a little bit of extra processing to remove them (but this adds up
-                    % so it's nice to avoid it most of the time!)
-                    if contains(me.identifier, 'IndexOutOfRange')
-                        index = nan(size(lat));
-                        valid = iy > 0 & ix > 0;
-                        imap = sub2ind(size(this.grid_idx_map), iy(valid), ix(valid));
-                        index(valid) = this.grid_idx_map(imap);
-                    else
-                        rethrow(me);
-                    end
-                end
-            end
-
-            function index = local_bruteforce_lookup(lat, lon)
-                % O(n_tiles) solution
-                [i,j] = find(... "i" is the tile index, and "j" is the query index
-                    lat(:)' >= this.lat_extents(:,1) & lat(:)' <= this.lat_extents(:,2) ...
-                    & ...
-                    lon(:)' >= this.lon_extents(:,1) & lon(:)' < this.lon_extents(:,2));
-    
-                % allocate output & only fill out the entries that were found
-                index = nan(size(lat));
-                index(j) = i;
-            end
-        end
-
-        function is_optimized = compute_dense_grid_mapping(this)
+        function grid_optimized = compute_dense_grid_mapping(this)
             %GEORASTERGRID/COMPUTE_DENSE_GRID_MAPPING Enable performance optimization.
             %
             %   Usage:
             %
-            %       is_optimized = obj.COMPUTE_DENSE_GRID_MAPPING()
+            %       grid_optimized = obj.COMPUTE_DENSE_GRID_MAPPING()
             %
             %   Inputs:
             %
@@ -684,15 +690,15 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %
             %   Outputs:
             %
-            %       is_optimized <1x1 logical>
+            %       grid_optimized <1x1 logical>
             %           - true if the optimization was successful
             %
             %   Description:
             %
             %       This method represents a sparsely-connected grid of tiles as
-            %       a dense grid so that tile lookups can occur in O(1) time (as
-            %       opposed to having to check the bounds of every tile--O(n_tiles)).
-            %       However, it can only be done if the gridded tiles are all aligned
+            %       a dense grid so that tile lookups can occur in near-constant time
+            %       (as opposed to checking the bounds of every tile... very slow).
+            %       However, this can only be done if the gridded tiles are all aligned
             %       to lines of longitude & latitude.  In other words, if you were to
             %       extend each of the 4 lines that make up the sides of any tile to
             %       +Inf and -Inf, those lines should only be coincident with the EDGES 
@@ -709,7 +715,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %       constant time, and the values of the dense grid map back to indices in
             %       the sparse grid to be used directly with obj.load_tile().
 
-            is_optimized = false;
+            grid_optimized = false;
 
             % check that all tiles are aligned to the same grid lines
             checked = false(size(this.raster_files));
@@ -765,8 +771,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 grid_start = this.lon_extents(icheck,1);
                 grid_end = this.lon_extents(icheck,2);
 
-                grid_start_u = uniquetol(grid_start, 1e-7); % allow ~1cm slack
-                grid_end_u = uniquetol(grid_end, 1e-7);
+                grid_start_u = uniquetol(grid_start, eps(single(pi)));
+                grid_end_u = uniquetol(grid_end, eps(single(pi)));
 
                 if numel(grid_start_u) > 1 || numel(grid_end_u) > 1
                     % grids are not aligned; abort
@@ -802,7 +808,14 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             this.lon_intervals = x_intervals;
             this.lat_intervals = y_intervals;
 
-            is_optimized = true;
+            grid_optimized = true;
+        end
+    end
+
+    %% Accessors
+    methods
+        function ok = get.grid_optimized(this)
+            ok = ~isempty(this.grid_idx_map);
         end
     end
 

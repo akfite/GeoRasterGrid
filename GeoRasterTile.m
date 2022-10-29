@@ -25,7 +25,10 @@ classdef GeoRasterTile < matlab.mixin.Copyable
     end
 
     properties (Access = private)
-        interpolant % griddedInterpolant for each channel
+        % griddedInterpolant for each channel.  in R2021A+ this can be handled
+        % by a single griddedInterpolant, but in prior versions we must store
+        % one interpolant per channel (in a cell array)
+        interpolant 
     end
     
     %% Constructor
@@ -108,8 +111,23 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             % TODO: assume standard image coords, but use info from R if possible
             [latgrid, longrid] = ndgrid(latgrid, longrid);
 
-            this.interpolant = griddedInterpolant(latgrid, longrid, single(img), this.interp);
-            this.file = raster_file;
+            if ischar(raster_file)
+                this.file = raster_file;
+            end
+
+            % R2021A introduces support for paged griddedInterpolant data
+            VERSION_R2021A = [100, 1] * sscanf(version, '%d.', 2) >= 910;
+
+            if VERSION_R2021A || size(img,3) == 1
+                % griddedInterpolant natively supports nonscalar 3rd dimension
+                this.interpolant = griddedInterpolant(latgrid, longrid, single(img), this.interp);
+            else
+                % need a separate interpolant per channel... much slower :(
+                for i = 1:size(img,3)
+                    this.interpolant{i,1} = griddedInterpolant(...
+                        latgrid, longrid, single(img(:,:,i)), this.interp);
+                end
+            end
         end
     end
 
@@ -148,7 +166,13 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                 'GeoRasterTile:not_matrix', ...
                 'Both latitude & longitude must be matrices (2d arrays)');
 
-            values = this.interpolant(lat, lon);
+            if ~iscell(this.interpolant)
+                values = this.interpolant(lat, lon);
+            else
+                % MATLAB version prior to R2021a with multi-channel raster data
+                values = cellfun(@(x) x(lat, lon), this.interpolant, 'uniform', false);
+                values = cat(3, values{:});
+            end
         end
 
         function [values, lat, lon] = roi(this, lat_bounds, lon_bounds, res)
@@ -320,20 +344,50 @@ classdef GeoRasterTile < matlab.mixin.Copyable
 
             validatestring(value, {'linear','nearest','spline','cubic','makima'});
             [latgrid, longrid] = ndgrid(this.lat, this.lon); %#ok<*MCSUP>
-            this.interpolant = griddedInterpolant(latgrid, longrid, this.raster, value);
-            this.interp = value;
+
+            if ~iscell(this.interpolant)
+                this.interpolant = griddedInterpolant(latgrid, longrid, this.raster, value);
+                this.interp = value;
+            else
+                % MATLAB version prior to R2021a with multi-channel raster data
+                data = this.raster;
+                for i = 1:numel(this.interpolant)
+                    this.interpolant{i} = griddedInterpolant(...
+                        latgrid, longrid, data(:,:,i), value);
+                end
+            end
         end
 
         function v = get.raster(this)
-            v = this.interpolant.Values;
+            if ~iscell(this.interpolant)
+                v = this.interpolant.Values;
+            else
+                % MATLAB version prior to R2021a with multi-channel raster data
+                v = nan([size(this.interpolant{1}.Values), numel(this.interpolant)],...
+                    'like',this.interpolant{1}.Values);
+
+                for i = 1:numel(this.interpolant)
+                    v(:,:,i) = this.interpolant{i}.Values;
+                end
+            end
         end
 
         function lat = get.lat(this)
-            lat = this.interpolant.GridVectors{1};
+            if ~iscell(this.interpolant)
+                lat = this.interpolant.GridVectors{1};
+            else
+                % MATLAB version prior to R2021a with multi-channel raster data
+                lat = this.interpolant{1}.GridVectors{1};
+            end
         end
 
         function lon = get.lon(this)
-            lon = this.interpolant.GridVectors{2};
+            if ~iscell(this.interpolant)
+                lon = this.interpolant.GridVectors{2};
+            else
+                % MATLAB version prior to R2021a with multi-channel raster data
+                lon = this.interpolant{1}.GridVectors{2};
+            end
         end
     end
 
