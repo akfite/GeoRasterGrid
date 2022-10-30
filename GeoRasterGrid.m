@@ -519,6 +519,35 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 index(j) = i;
             end
         end
+
+        function this = clear(this, idx)
+            %GEORASTERGRID/CLEAR Delete saved tiles from memory.
+            %
+            %   Usage:
+            %
+            %       obj.clear()
+            %       obj.clear(idx)
+            %
+            %   Inputs:
+            %
+            %       idx (=1:numel(obj.tiles)) <numeric integer>
+            %           - the indices (in obj.tiles) to remove
+            %           - defaults to all tiles
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
+
+            if nargin < 2
+                idx = 1:numel(this.tiles);
+            end
+
+            % keep values in range
+            idx = idx(ismember(idx, 1:numel(this.tiles)));
+
+            % remove entries
+            delete(this.tiles(idx));
+            this.tiles(idx) = [];
+            this.index(idx) = [];
+        end
         
         function ax = show(this, ax)
             %GEORASTERGRID/SHOW Display the current state of the map.
