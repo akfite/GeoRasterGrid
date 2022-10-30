@@ -18,17 +18,14 @@ classdef GeoRasterTile < matlab.mixin.Copyable
     end
 
     properties
-        interp(1,:) char = 'cubic' % setting this prop updates interpolant
-    end
-
-    properties (SetAccess = private)
+        interp(1,:) char = 'cubic' % interpolation method
     end
 
     properties (Access = private)
         % griddedInterpolant for each channel.  in R2021A+ this can be handled
         % by a single griddedInterpolant, but in prior versions we must store
         % one interpolant per channel (in a cell array)
-        interpolant 
+        interpolant
     end
     
     %% Constructor
@@ -244,7 +241,24 @@ classdef GeoRasterTile < matlab.mixin.Copyable
         function flag = contains(this, lat, lon)
             %GEORASTERTILE/CONTAINS Check if the tile contains some point(s).
             %
+            %   Usage:
             %
+            %       flag = contains(obj, lat, lon)
+            %
+            %   Inputs:
+            %
+            %       lat, lon <double matrix>
+            %           - the query points
+            %           - degrees on the interval [-90,90] and [-180, 180]
+            %           - must be the same size
+            %
+            %   Outputs:
+            %
+            %       flag <logical matrix>
+            %           - true when a point exists inside the rectangle that
+            %             bounds the tile in latitude & longitude
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterTile">GeoRasterTile</a>
 
             assert(isscalar(this),'GeoRasterTile:scalar_only',...
                 'GeoRasterTile/contains cannot operate on more than one object at once.');

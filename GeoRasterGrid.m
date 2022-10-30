@@ -733,8 +733,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 grid_start = this.lat_extents(icheck,1);
                 grid_end = this.lat_extents(icheck,2);
 
-                grid_start_u = uniquetol(grid_start, 1e-7); % allow ~1cm slack
-                grid_end_u = uniquetol(grid_end, 1e-7);
+                grid_start_u = uniquetol(grid_start, eps(single(pi)));
+                grid_end_u = uniquetol(grid_end, eps(single(pi)));
 
                 if numel(grid_start_u) > 1 || numel(grid_end_u) > 1
                     % grids are not aligned; abort
