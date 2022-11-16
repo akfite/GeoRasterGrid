@@ -490,9 +490,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 idx = local_bruteforce_lookup(lat, lon); return
             end
 
-            % LOCAL (NESTED) FUNCTION
+            % LOCAL (NESTED) FUNCTION (% something like 300x-1000x faster than brute force)
             function index = local_optimized_lookup(lat, lon)
-                % something like 300x-1000x faster
                 ix = findinterval(this.lon_intervals(:,1), this.lon_intervals(:,2), lon);
                 iy = findinterval(this.lat_intervals(:,1), this.lat_intervals(:,2), lat);
 
@@ -514,9 +513,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 end
             end
 
-            % LOCAL (NESTED) FUNCTION
+            % LOCAL (NESTED) FUNCTION  (brute force O(n_tiles) solution)
             function index = local_bruteforce_lookup(lat, lon)
-                % O(n_tiles) solution
                 [i,j] = find(... "i" is the tile index, and "j" is the query index
                     lat(:)' >= this.lat_extents(:,1) & lat(:)' <= this.lat_extents(:,2) ...
                     & ...
