@@ -615,12 +615,12 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                     'HitTest','off');
 
                 box(ax,'on');
-                xlim(ax,[-180 180]);
-                ylim(ax,[-90 90]);
                 xlabel(ax,'longitude (degrees)');
                 ylabel(ax,'latitude (degrees)');
                 axis(ax,'equal');
                 axis(ax,'tight');
+                xlim(ax,[-180 180]);
+                ylim(ax,[-90 90]);
                 zoom(ax,'on');
             end
 
