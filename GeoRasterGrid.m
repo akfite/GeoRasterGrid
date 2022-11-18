@@ -15,9 +15,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 %       <a href="matlab:help GeoRasterGrid.get">get</a> (values at specific lat/lon)
 %       <a href="matlab:help GeoRasterGrid.roi">roi</a> (get rectangular region of interest)
 %       <a href="matlab:help GeoRasterGrid.latlon2tileidx">latlon2tileidx</a> (lookup tile index)
-%       <a href="matlab:help GeoRasterGrid.get_tile">get_tile</a> (standard tile accessor)
-%       <a href="matlab:help GeoRasterGrid.load_tile">load_tile</a> (load from disk)
-%       <a href="matlab:help GeoRasterGrid.store_tile">store_tile</a> (add to obj state)
+%       <a href="matlab:help GeoRasterGrid.get_tile">get_tile</a> (cached tile accessor)
+%       <a href="matlab:help GeoRasterGrid.store_tile">store_tile</a> (add tile to obj state)
 %       <a href="matlab:help GeoRasterGrid.clear">clear</a> (drop tiles from obj state)
 %       <a href="matlab:help GeoRasterGrid.show">show</a> (display the current state)
 
@@ -219,10 +218,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
         function value = get(this, lat, lon, idx)
             %GEORASTERGRID/GET Interpolate the value at specific lat/lon point(s).
             %
-            %   Usage (assuming map is a 1x1 GeoRasterGrid):
+            %   Usage:
             %
-            %       value = map.get(lat, lon)
-            %       value = map.get(lat, lon, idx)
+            %       value = obj.get(lat, lon)
+            %       value = obj.get(lat, lon, idx)
             %
             %   Inputs:
             %
@@ -340,10 +339,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
         function [value, lat, lon] = roi(this, lat_lim, lon_lim, res)
             %GEORASTERGRID/ROI Get the values in a rectangular Region Of Interest (ROI).
             %
-            %   Usage (assuming map is a 1x1 GeoRasterGrid):
+            %   Usage:
             %
-            %       [value, lat, lon] = map.roi(lat_lim, lon_lim)
-            %       [value, lat, lon] = map.roi(lat_lim, lon_lim, res)
+            %       [value, lat, lon] = obj.roi(lat_lim, lon_lim)
+            %       [value, lat, lon] = obj.roi(lat_lim, lon_lim, res)
             %
             %   Inputs:
             %
@@ -545,20 +544,25 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
         function tile = get_tile(this, idx)
             %GEORASTERGRID/GET_TILE Cached tile accessor.
             %
-            %   Usage (assuming map is a 1x1 GeoRasterGrid):
+            %   Usage:
             %
-            %       tile = map.get_tile(index)
+            %       tile = obj.get_tile(index)
+            %
+            %   Description:
+            %
+            %       Gets a tile by index either from the cache (if it has already
+            %       been stored) or loads it from disk, if required.
             %
             %   Inputs:
             %
             %       index <1x1 numeric>
             %           - the index of the tile to retrieve
-            %           - must be valid on 1:numel(obj.raster_files)
+            %           - must be a member of 1:numel(obj.raster_files)
             %
             %   Outputs:
             %
             %       tile <1x1 GeoRasterTile>
-            %           - the tile that contains the point
+            %           - the tile either pulled from object state or loaded from disk
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
@@ -571,40 +575,19 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             end
         end
 
-        function tile = load_tile(this, index)
-            %GEORASTERGRID/LOAD_TILE Load the tile at a given index.
-            %
-            %   Usage:
-            %
-            %       tile = obj.LOAD_TILE(index)
-            %
-            %   Inputs:
-            %
-            %       index <1x1 double>
-            %           - the index to the tile to load
-            %           - must be valid on 1:numel(obj.raster_files)
-            %
-            %   Outputs:
-            %
-            %       tile <1x1 GeoRasterTile>
-            %           - the tile to load
-            %
-            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
-
-            validateattributes(index, {'numeric'},{'scalar','integer','positive'});
-            assert(index >= 1 && index <= numel(this.raster_files), ...
-                'Index out of bounds.');
-
-            tile = GeoRasterTile(this.raster_files{index}, ...
-                this.lat_extents(index,:), this.lon_extents(index,:));
-        end
-
         function store_tile(this, tile)
             %GEORASTERGRID/STORE_TILE Save a tile to the object state.
             %
             %   Usage:
             %
             %       obj.store_tile(tile)
+            %
+            %   Description:
+            %
+            %       Caches a GeoRasterTile into the buffer of a GeoRasterGrid so that
+            %       future lookups do not require loading from disk.  Subject to the
+            %       memory constraint imposed by obj.capacity.  The buffer operates
+            %       in a first-in, first-out (FIFO) manner.
             %
             %   Inputs:
             %
@@ -673,7 +656,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
         end
         
         function ax = show(this, ax)
-            %GEORASTERGRID/SHOW Display the current state of the map.
+            %GEORASTERGRID/SHOW Display the current state of the obj.
             %
             %   Usage:
             %
@@ -705,7 +688,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 hold(ax,'on');
 
                 % overlay on map of the Earth
-                earth_texture = imread('world_map.jpg');
+                earth_texture = imread('world_obj.jpg');
                 image(...
                     linspace(-180,180, size(earth_texture,2)), ...
                     linspace(90,-90, size(earth_texture,1)), ...
@@ -760,6 +743,39 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
     %% Private helper methods
     methods (Access = private)
+        function tile = load_tile(this, index)
+            %GEORASTERGRID/LOAD_TILE Load the tile at a given index.
+            %
+            %   Usage:
+            %
+            %       tile = obj.load_tile(index)
+            %
+            %   Description:
+            %
+            %       Loads a tile from disk.
+            %
+            %   Inputs:
+            %
+            %       index <1x1 double>
+            %           - the index of the tile to load
+            %           - must be a member of 1:numel(obj.raster_files)
+            %
+            %   Outputs:
+            %
+            %       tile <1x1 GeoRasterTile>
+            %           - the tile that was loaded from disk
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
+
+            validateattributes(index, ...
+                {'numeric'},...
+                {'scalar','integer','>=',1,'<=',numel(this.raster_files)});
+
+            tile = GeoRasterTile(this.raster_files{index}, ...
+                this.lat_extents(index,:), ...
+                this.lon_extents(index,:));
+        end
+
         function grid_optimized = compute_dense_grid_mapping(this)
             %GEORASTERGRID/COMPUTE_DENSE_GRID_MAPPING Enable performance optimization.
             %
