@@ -406,16 +406,16 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 dx = abs(diff(tile.lon(1:2)));
 
                 if lat_lim(1) < lat(1)
-                    lat = [lat_lim(1):dy:(lat(1)-dy), lat];
+                    lat = [fliplr((lat(1)-dy):-dy:lat_lim(1)), lat];
                 end
                 if lat_lim(2) > lat(end)
                     lat = [lat, lat(end)+dy:dy:lat_lim(2)];
                 end
                 if lon_lim(1) < lon(1)
-                    lon = [lon_lim(1):dx:(lat(1)-dx), lon];
+                    lon = [fliplr((lon(1)-dx):-dx:lon_lim(1)), lon];
                 end
                 if lon_lim(2) > lon(end)
-                    lon = [lon, lon(end)+dx:dx:lon_lim(2)];
+                    lon = [lon, (lon(end)+dx):dx:lon_lim(2)];
                 end
 
                 % trim
@@ -434,12 +434,12 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 [lat_grid, lon_grid] = ndgrid(lat, lon);
 
                 if all(unique_tiles == unique_tiles(1))
-                    value = this.get(lat_grid, lon_grid, unique_tiles);
+                    value = this.get(lat_grid, lon_grid, unique_tiles(1));
                 else
                     value = this.get(lat_grid, lon_grid);
                 end
             else
-                % sample at custom resolution (interpolate)
+                % sample at custom resolution (interpolate) 
                 validateattributes(res, {'numeric'},{'scalar','positive','real'});
 
                 height = abs(diff(lat_lim));
