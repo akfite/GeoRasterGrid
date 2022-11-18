@@ -13,10 +13,13 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 %
 %       Public methods:
 %       <a href="matlab:help GeoRasterGrid.get">get</a> (values at specific lat/lon)
-%       <a href="matlab:help GeoRasterGrid.roi">roi</a> (values in a region of interest)
-%       <a href="matlab:help GeoRasterGrid.latlon2tileidx">latlon2tileidx</a> (lookup tile #)
-%       <a href="matlab:help GeoRasterGrid.clear">clear</a> (drop tiles in memory)
-%       <a href="matlab:help GeoRasterGrid.plot">plot</a>
+%       <a href="matlab:help GeoRasterGrid.roi">roi</a> (get rectangular region of interest)
+%       <a href="matlab:help GeoRasterGrid.latlon2tileidx">latlon2tileidx</a> (lookup tile index)
+%       <a href="matlab:help GeoRasterGrid.get_tile">get_tile</a> (standard tile accessor)
+%       <a href="matlab:help GeoRasterGrid.load_tile">load_tile</a> (load from disk)
+%       <a href="matlab:help GeoRasterGrid.store_tile">store_tile</a> (add to obj state)
+%       <a href="matlab:help GeoRasterGrid.clear">clear</a> (drop tiles from obj state)
+%       <a href="matlab:help GeoRasterGrid.show">show</a> (display the current state)
 
 %   Author:     Austin Fite
 %   Contact:    akfite@gmail.com
@@ -539,6 +542,101 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             end
         end
 
+        function tile = get_tile(this, idx)
+            %GEORASTERGRID/GET_TILE Cached tile accessor.
+            %
+            %   Usage (assuming map is a 1x1 GeoRasterGrid):
+            %
+            %       tile = map.get_tile(index)
+            %
+            %   Inputs:
+            %
+            %       index <1x1 numeric>
+            %           - the index of the tile to retrieve
+            %           - must be valid on 1:numel(obj.raster_files)
+            %
+            %   Outputs:
+            %
+            %       tile <1x1 GeoRasterTile>
+            %           - the tile that contains the point
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
+
+            itile = this.index == idx;
+
+            if any(itile)
+                tile = this.tiles(itile);
+            else
+                tile = this.load_tile(idx);
+            end
+        end
+
+        function tile = load_tile(this, index)
+            %GEORASTERGRID/LOAD_TILE Load the tile at a given index.
+            %
+            %   Usage:
+            %
+            %       tile = obj.LOAD_TILE(index)
+            %
+            %   Inputs:
+            %
+            %       index <1x1 double>
+            %           - the index to the tile to load
+            %           - must be valid on 1:numel(obj.raster_files)
+            %
+            %   Outputs:
+            %
+            %       tile <1x1 GeoRasterTile>
+            %           - the tile to load
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
+
+            validateattributes(index, {'numeric'},{'scalar','integer','positive'});
+            assert(index >= 1 && index <= numel(this.raster_files), ...
+                'Index out of bounds.');
+
+            tile = GeoRasterTile(this.raster_files{index}, ...
+                this.lat_extents(index,:), this.lon_extents(index,:));
+        end
+
+        function store_tile(this, tile)
+            %GEORASTERGRID/STORE_TILE Save a tile to the object state.
+            %
+            %   Usage:
+            %
+            %       obj.store_tile(tile)
+            %
+            %   Inputs:
+            %
+            %       tile <1x1 GeoRasterTile>
+            %           - the tile to store
+            %
+            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
+
+            validateattributes(tile, {'GeoRasterTile'},{'scalar'});
+
+            idx = find(strcmp(this.raster_files, tile.file),1,'first');
+            assert(~isempty(idx), 'Map has no record of raster file "%s"', tile.file);
+
+            if any(idx == this.index)
+                return % tile is already cached!
+            end
+
+            if numel(this.tiles) == this.capacity
+                % delete the first to make room (first in, first out)
+                this.clear(1);
+            end
+
+            this.tiles(end+1) = tile;
+            this.index(end+1) = idx;
+
+            notify(this, 'TileAdded');
+
+            if ~isempty(this.ax) && isvalid(this.ax)
+                show(this, this.ax); % refresh plot if already active
+            end
+        end
+
         function this = clear(this, idx)
             %GEORASTERGRID/CLEAR Delete saved tiles from memory.
             %
@@ -662,100 +760,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
     %% Private helper methods
     methods (Access = private)
-        function tile = get_tile(this, idx)
-            %GEORASTERGRID/GET_TILE Cached tile accessor.
-            %
-            %   Usage (assuming map is a 1x1 GeoRasterGrid):
-            %
-            %       tile = map.get_tile(index)
-            %
-            %   Inputs:
-            %
-            %       index <1x1 numeric>
-            %           - the index of the tile to retrieve
-            %
-            %   Outputs:
-            %
-            %       tile <1x1 GeoRasterTile>
-            %           - the tile that contains the point
-            %
-            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
-
-            itile = this.index == idx;
-
-            if any(itile)
-                tile = this.tiles(itile);
-            else
-                tile = this.load_tile(idx);
-            end
-        end
-
-        function tile = load_tile(this, index)
-            %GEORASTERGRID/LOAD_TILE Load the tile at a given index.
-            %
-            %   Usage:
-            %
-            %       tile = obj.LOAD_TILE(index)
-            %
-            %   Inputs:
-            %
-            %       index <1x1 double>
-            %           - the index to the tile to load
-            %           - must be valid on 1:numel(obj.raster_files)
-            %
-            %   Outputs:
-            %
-            %       tile <1x1 GeoRasterTile>
-            %           - the tile to load
-            %
-            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
-
-            validateattributes(index, {'numeric'},{'scalar','integer','positive'});
-            assert(index >= 1 && index <= numel(this.raster_files), ...
-                'Index out of bounds.');
-
-            tile = GeoRasterTile(this.raster_files{index}, ...
-                this.lat_extents(index,:), this.lon_extents(index,:));
-        end
-
-        function store_tile(this, tile)
-            %GEORASTERGRID/STORE_TILE Save a tile to the object state.
-            %
-            %   Usage:
-            %
-            %       obj.store_tile(tile)
-            %
-            %   Inputs:
-            %
-            %       tile <1x1 GeoRasterTile>
-            %           - the tile to store
-            %
-            %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
-
-            validateattributes(tile, {'GeoRasterTile'},{'scalar'});
-
-            idx = find(strcmp(this.raster_files, tile.file),1,'first');
-            assert(~isempty(idx), 'Map has no record of raster file "%s"', tile.file);
-
-            if any(idx == this.index)
-                return % tile is already cached!
-            end
-
-            if numel(this.tiles) == this.capacity
-                % delete the first to make room (first in, first out)
-                this.clear(1);
-            end
-
-            this.tiles(end+1) = tile;
-            this.index(end+1) = idx;
-
-            notify(this, 'TileAdded');
-
-            if ~isempty(this.ax) && isvalid(this.ax)
-                show(this, this.ax); % refresh plot if already active
-            end
-        end
-
         function grid_optimized = compute_dense_grid_mapping(this)
             %GEORASTERGRID/COMPUTE_DENSE_GRID_MAPPING Enable performance optimization.
             %
