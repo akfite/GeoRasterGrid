@@ -68,13 +68,15 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
     %% Constructor
     methods
-        function this = GeoRasterGrid(files, read_limits)
+        function this = GeoRasterGrid(files, varargin)
             %GEORASTERGRID Constructor.
             %
             %   Usage:
             %
             %       obj = GEORASTERGRID(files)
             %       obj = GEORASTERGRID(files, read_limits)
+            %       obj = GEORASTERGRID(files, read_limits, capacity)
+            %       obj = GEORASTERGRID(files, capacity, read_limits) % order invariant
             %
             %   Inputs:
             %
@@ -107,25 +109,36 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %           - function handle to read the latitude & longitude limits of
             %             the raster given its filepath
             %           - by default it will support files readable by readgeoraster,
-            %             but if the data is in some custom format (e.g. JPEG2000 with
+            %             but if the data is in some custom format (e.g. JPEG with
             %             geospatial info encoded in the filepath) the function can be
             %             replaced with a user-defined method
             %           - user-defined functions must accept 1 input (the filepath to
             %             a raster file) and return two outputs: [min_lat max_lat], and
             %             [min_lon max_lon] for that file
             %
+            %       capacity (=16) <1x1 integer>
+            %           - the number of tiles that can be stored in memory at any time
+            %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
             
-            if nargin < 2
-                read_limits = @GeoRasterTile.read_limits;
-            end
+            read_limits = @GeoRasterTile.read_limits;
+            capacity = 16;
 
-            if nargin < 1
-                files = "D:\data\blue-marble\dem";
+            for i = 1:numel(varargin)
+                if ischar(varargin{i})
+                    read_limits = str2func(varargin{i});
+                elseif isa(varargin{i}, 'function_handle')
+                    read_limits = varargin{i};
+                elseif isnumeric(varargin{i}) && isscalar(varargin{i})
+                    capacity = varargin{i};
+                else
+                    error('Unexpected input format.');
+                end
             end
 
             validateattributes(files, {'string','char','cell'}, {});
             validateattributes(read_limits, {'function_handle'}, {'scalar'});
+            validateattributes(capacity,{'numeric'},{'integer','positive','scalar'});
 
             % enforce common format
             if ~isstring(files)
@@ -185,7 +198,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             this.raster_files = raster_files;
             this.lat_extents = vertcat(lat_lim{:});
             this.lon_extents = vertcat(lon_lim{:});
-            this.capacity = min(this.capacity, numel(raster_files));
+            this.capacity = min(capacity, numel(raster_files));
 
             % performance optimization for uniformly-gridded data will improve the time it
             % takes to lookup the correct tile for each lat/lon from O(n_tiles) to something
