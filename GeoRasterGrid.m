@@ -594,6 +594,11 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %       tile <1x1 GeoRasterTile>
             %           - the tile to store
             %
+            %   Events:
+            %
+            %       Triggers event 'TileAdded' after the tile has been added to the
+            %       cache.  The tile added is always the last in the list: obj.tiles(end).
+            %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
             validateattributes(tile, {'GeoRasterTile'},{'scalar'});
@@ -628,11 +633,19 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %       obj.clear()
             %       obj.clear(idx)
             %
+            %   Description:
+            %
+            %       Deletes one or more tiles from object state.
+            %
             %   Inputs:
             %
             %       idx (=1:numel(obj.tiles)) <numeric integer>
             %           - the indices (in obj.tiles) to remove
             %           - defaults to all tiles
+            %
+            %   Events:
+            %
+            %       Triggers event 'TileRemoved' after deletion.
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
@@ -653,6 +666,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             this.index(idx) = [];
 
             notify(this, 'TileRemoved');
+
+            if ~isempty(this.ax) && isvalid(this.ax)
+                show(this, this.ax); % refresh plot if already active
+            end
         end
         
         function ax = show(this, ax)
@@ -688,7 +705,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 hold(ax,'on');
 
                 % overlay on map of the Earth
-                earth_texture = imread('world_obj.jpg');
+                earth_texture = imread('world_map.jpg');
                 image(...
                     linspace(-180,180, size(earth_texture,2)), ...
                     linspace(90,-90, size(earth_texture,1)), ...
