@@ -156,7 +156,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 
             % search remaining folders for raster files
             for i = 1:numel(files)
-                found_files = dir(fullfile(files{i}, '**\*.*'));
+                found_files = dir(fullfile(files{i}, ['**' filesep '*.*']));
                 found_files = string(fullfile({found_files.folder}, {found_files.name})');
 
                 [~,~,ext] = fileparts(found_files);
