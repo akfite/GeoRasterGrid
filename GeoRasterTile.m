@@ -67,14 +67,18 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                         img = flipud(img);
                     end
                 catch
-                    assert(nargin > 1, ...
+                    assert(nargin == 3, ...
                         ['File must be readable by readgeoraster() when not ' ...
                         'providing spatial referencing info (nargin == 1).']);
 
                     try
                         img = imread(raster_file);
                     catch
-                        img = readmatrix(raster_file);
+                        try
+                            img = readmatrix(raster_file);
+                        catch
+                            img = dlmread(raster_file); %#ok<DLMRD> 
+                        end
                     end
                 end
             else
@@ -167,8 +171,9 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                 values = this.interpolant(lat, lon);
             else
                 % MATLAB version prior to R2021a with multi-channel raster data
-                values = cellfun(@(x) x(lat, lon), this.interpolant, 'uniform', false);
-                values = cat(3, values{:});
+                for i = numel(this.interpolant):-1:1
+                    values(:,:,i) = this.interpolant{i}(lat, lon);
+                end
             end
         end
 
