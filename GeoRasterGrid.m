@@ -1,5 +1,5 @@
 classdef GeoRasterGrid < matlab.mixin.Copyable
-%GEORASTERGRID Fast access to tiled geospatial data
+%GEORASTERGRID Fast access to tiled geospatial data.
 %
 %   obj = GEORASTERGRID(___) manages a tiled dataset of geospatial information
 %   such as a collection of GeoTIFF images.  It provides O(1) tile lookup, a
