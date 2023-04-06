@@ -379,6 +379,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
 
         function v = get.raster(this)
             if ~iscell(this.interpolant)
+                % newer MATLAB only (R2021a+ can interp with one 3-D interpolant)
                 v = this.interpolant.Values;
             else
                 % MATLAB version prior to R2021a with multi-channel raster data
