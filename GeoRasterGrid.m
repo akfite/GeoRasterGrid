@@ -2,9 +2,8 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 %GEORASTERGRID Fast access to tiled geospatial data.
 %
 %   obj = GEORASTERGRID(___) manages a tiled dataset of geospatial information
-%   such as a collection of GeoTIFF images.  It provides O(1) tile lookup, a
-%   data cache to reuse recently-accessed data, and the ability to operate without
-%   any toolbox licenses.
+%   such as a collection of GeoTIFF images.  It is highly-optimized for speed
+%   of data access.
 %
 %   Methods:
 %
@@ -29,7 +28,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
     end
 
     properties
-        capacity(1,1) uint16 = 16 % max number of tiles to store
+        capacity(1,1) uint16 = 9 % max number of tiles to store
     end
 
     properties (SetAccess = private, Transient)
@@ -118,13 +117,13 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %             a raster file) and return two outputs: [min_lat max_lat], and
             %             [min_lon max_lon] for that file
             %
-            %       capacity (=16) <1x1 integer>
+            %       capacity (=9) <1x1 integer>
             %           - the number of tiles that can be stored in memory at any time
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
             
             read_limits = @GeoRasterTile.read_limits;
-            capacity = 16;
+            capacity = 9;
 
             for i = 1:numel(varargin)
                 if ischar(varargin{i})
@@ -505,7 +504,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 idx = local_bruteforce_lookup(lat, lon); return
             end
 
-            % LOCAL (NESTED) FUNCTION (% something like 300x-1000x faster than brute force)
+            % LOCAL (NESTED) FUNCTION (something like 300x-1000x faster than brute force)
             function index = local_optimized_lookup(lat, lon)
                 ix = findinterval(this.lon_intervals(:,1), this.lon_intervals(:,2), lon);
                 iy = findinterval(this.lat_intervals(:,1), this.lat_intervals(:,2), lat);
