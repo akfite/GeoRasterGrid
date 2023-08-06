@@ -23,10 +23,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
 %   Contact:    akfite@gmail.com
 %   Date:       10-2022
 
-    properties (Dependent)
-        grid_optimized(1,1) logical
-    end
-
     properties
         capacity(1,1) uint16 = 9 % max number of tiles to store
     end
@@ -47,10 +43,12 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
     properties (Access = private)
         % currently-displayed axis
         ax
+    end
 
-        % metadata to enable performance optimization
-        lat_intervals(:,2) double % lower & upper bound of each unique interval
-        lon_intervals(:,2) double % lower & upper bound of each unique interval
+    % metadata for internal performance optimization
+    properties (Hidden, SetAccess = private)
+        lat_intervals(:,2) double % lower & upper bound of each UNIQUE interval
+        lon_intervals(:,2) double % lower & upper bound of each UNIQUE interval
         grid_idx_map(:,:) double % each element is an index into obj.raster_files
     end
 
@@ -81,8 +79,9 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %
             %   Inputs:
             %
-            %       files <1xN char or Nx1 string/cellstr>
+            %       files (='./data/blue-marble') <1xN char or Nx1 string/cellstr>
             %           - the location of the georaster files
+            %           - uses the included Blue Marble DEM dataset when nargin == 0
             %           - folder path inputs will be recursively searched for
             %             files with the following extensions:
             %
@@ -124,6 +123,10 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             
             read_limits = @GeoRasterTile.read_limits;
             capacity = 9;
+
+            if nargin < 1
+                files = fullfile(fileparts(mfilename('fullpath')), 'data', 'blue-marble');
+            end
 
             for i = 1:numel(varargin)
                 if ischar(varargin{i})
@@ -498,7 +501,9 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             %
             %   For more methods, see <a href="matlab:help GeoRasterGrid">GeoRasterGrid</a>
 
-            if this.grid_optimized
+            GRID_OPTIMIZED = ~isempty(this.grid_idx_map);
+
+            if GRID_OPTIMIZED
                 idx = local_optimized_lookup(lat, lon); return
             else
                 idx = local_bruteforce_lookup(lat, lon); return
@@ -713,7 +718,7 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                         'GeoRasterGrid:missing_rgb_map', ...
                         'Failed to locate required file ./data/rgb_world_map.jpg');
                 end
-                
+
                 earth_texture = imread(map_file);
                 image(...
                     linspace(-180,180, size(earth_texture,2)), ...
@@ -936,13 +941,6 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
             this.lat_intervals = y_intervals;
 
             grid_optimized = true;
-        end
-    end
-
-    %% Accessors
-    methods
-        function ok = get.grid_optimized(this)
-            ok = ~isempty(this.grid_idx_map);
         end
     end
 

@@ -417,7 +417,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             [folder,name] = fileparts(file);
 
             if exist(fullfile(folder, name, '.json'),'file')
-                json_txt = readascii(fullfile(folder, name, '.json'));
+                json_txt = readlines(fullfile(folder, name, '.json'));
                 R = jsondecode(json_txt);
 
                 switch R.AngleUnit
@@ -447,7 +447,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                     case 'degree'
                         lat_lim = R.LatitudeLimits;
                         lon_lim = R.LongitudeLimits;
-                    case {'radian', 'radians'} % actually not sure what MATLAB uses...
+                    case {'radians', 'radian', 'rad'} % actually not sure what MATLAB uses...
                         lat_lim = R.LatitudeLimits * 180/pi;
                         lon_lim = R.LongitudeLimits * 180/pi;
                     otherwise
