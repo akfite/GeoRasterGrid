@@ -177,7 +177,7 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             end
         end
 
-        function [values, lat, lon] = roi(this, lat_bounds, lon_bounds, res)
+        function [values, lat, lon] = roi(this, lat_roi, lon_roi, res)
             %GEORASTERTILE/ROI Get values in a region of interest (ROI).
             %
             %   Usage:
@@ -210,10 +210,10 @@ classdef GeoRasterTile < matlab.mixin.Copyable
             %
             %   For more methods, see <a href="matlab:help GeoRasterTile">GeoRasterTile</a>
 
-            if nargin < 3
+            if nargin < 4
                 % sample at native resolution
-                ilat = find(this.lat >= lat_bounds(1) & this.lat <= lat_bounds(2));
-                ilon = find(this.lon >= lon_bounds(1) & this.lon <= lon_bounds(2));
+                ilat = find(this.lat >= lat_roi(1) & this.lat <= lat_roi(2));
+                ilon = find(this.lon >= lon_roi(1) & this.lon <= lon_roi(2));
     
                 % index directly (no interpolation)
                 lat = this.lat(ilat);
@@ -225,11 +225,11 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                     res = [res res];
                 end
 
-                lat = lat_bounds(1):res(1):lat_bounds(2);
-                lon = lon_bounds(1):res(2):lon_bounds(2);
+                lat = lat_roi(1):res(1):lat_roi(2);
+                lon = lon_roi(1):res(2):lon_roi(2);
 
                 ilat = find(lat >= this.lat(1) & lat <= this.lat(end));
-                ilon = find(lon >= lon_bounds(1) & lon <= lon_bounds(2));
+                ilon = find(lon >= lon_roi(1) & lon <= lon_roi(2));
 
                 lat = lat(ilat);
                 lon = lon(ilon);
