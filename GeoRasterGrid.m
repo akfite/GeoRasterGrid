@@ -704,7 +704,17 @@ classdef GeoRasterGrid < matlab.mixin.Copyable
                 hold(ax,'on');
 
                 % overlay on map of the Earth
-                earth_texture = imread('world_map.jpg');
+                map_file = which('rgb_world_map.jpg');
+                if isempty(map_file)
+                    % not on path; is it still there?
+                    data_folder = fileparts(mfilename('fullpath'));
+                    map_file = fullfile(data_folder, 'data', 'rgb_world_map.jpg');
+                    assert(exist(map_file,'file'), ...
+                        'GeoRasterGrid:missing_rgb_map', ...
+                        'Failed to locate required file ./data/rgb_world_map.jpg');
+                end
+                
+                earth_texture = imread(map_file);
                 image(...
                     linspace(-180,180, size(earth_texture,2)), ...
                     linspace(90,-90, size(earth_texture,1)), ...
