@@ -305,12 +305,12 @@ classdef GeoRasterTile < matlab.mixin.Copyable
                 bx = [this.lon([1 1 end end 1]) NaN];
                 by = [this.lat([end 1 1 end end]) NaN];
                 
-                % need to adjust by 1/2 pixel at edges to account for grid cell postings
+                % need to expand by 1/2 pixel at edges to account for grid cell postings
                 % (coords are recorded at pixel center; we want the true edge of grid)
                 dx = diff(this.lon(1:2));
                 dy = diff(this.lat(1:2));
                 bx = bx + ([-dx -dx dx dx -dx NaN] * 0.5);
-                by = by + ([-dy dy dy -dy -dy NaN] * 0.5);
+                by = by + ([dy -dy -dy dy dy NaN] * 0.5);
 
                 bx = bx';
                 by = by';
