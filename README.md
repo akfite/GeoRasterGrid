@@ -46,6 +46,19 @@ We just need to use the `get()` method:
 value = map.get(28.540822, -81.374806)
 ```
 
+`value` is the *interpolated* value of the DEM at the requested `(lat, lon)`.  At the moment
+the interpolation scheme is `cubic` and it is controlled by the `GeoRasterTile.interp` property, 
+which would have to be changed manually by the user.
+
+If the `map.show()` figure is still open, you'll notice that it has been updated:
+
 <p align="left">
   <img src="doc/help-2.png" title="the map.show() figure will update if left open">
 </p>
+
+Here, the tile that was loaded is colored green to indicate that it is currently-loaded in memory. 
+This figure can be opened or closed at any time and will always update to reflect the current 
+state of the map.
+
+## Initializing Maps
+
