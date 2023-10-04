@@ -33,8 +33,20 @@ map = GeoRasterGrid()
 ```
 
 With the map object created, you can call `map.show` to see the tile boundaries 
-overlaid on an RGB map of the Earth:
+overlaid on an (included) RGB map of the Earth:
 
 <p align="center">
-  <img src="doc/help-1.png" title="hover text">
+  <img src="doc/help-1.png" title="map.show() displays the current state">
+</p>
+
+Then, let's say we wanted to access a data point in Florida--at `(28.540822, -81.374806)`. 
+We just need to use the `get()` method:
+
+```
+value = map.get(28.540822, -81.374806)
+```
+
+<p align="center">
+  <img src="doc/help-2.png">
+  <img src="doc/help-3.png" title="the map.show() figure will update if left open">
 </p>
