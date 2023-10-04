@@ -46,7 +46,6 @@ We just need to use the `get()` method:
 value = map.get(28.540822, -81.374806)
 ```
 
-<p align="center">
-  <img src="doc/help-2.png">
-  <img src="doc/help-3.png" title="the map.show() figure will update if left open">
+<p align="left">
+  <img src="doc/help-2.png" title="the map.show() figure will update if left open">
 </p>
